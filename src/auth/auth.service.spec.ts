@@ -59,8 +59,17 @@ describe('AuthService', () => {
     });
 
     expect(result).toEqual({
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
+      tokens: {
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+      },
+      user: {
+        id: 1,
+        email: 'admin@madis.com',
+        userName: 'admin',
+        role: 'ADMIN',
+        permissions: ['ALL'],
+      },
     });
     expect(signAsyncMock).toHaveBeenCalledWith(
       {
