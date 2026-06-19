@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { CookieOptions, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -21,12 +21,19 @@ export class AuthController {
     @Body() loginDto: LoginDto,
     @Res({ passthrough: true }) response: Response,
   ): Promise<LoginResponse> {
-    const tokens = await this.authService.login(loginDto);
-    this.setAuthCookies(response, tokens);
+    const session = await this.authService.login(loginDto);
+    this.setAuthCookies(response, session.tokens);
 
     return {
       message: 'Connexion réussie.',
+      user: session.user,
     };
+  }
+
+  @Post('logout')
+  @HttpCode(204)
+  logout(@Res({ passthrough: true }) response: Response): void {
+    this.clearAuthCookies(response);
   }
 
   private setAuthCookies(response: Response, tokens: AuthTokens): void {
@@ -40,6 +47,18 @@ export class AuthController {
       tokens.refreshToken,
       this.getAuthCookieOptions('JWT_REFRESH_EXPIRES_IN'),
     );
+  }
+
+  private clearAuthCookies(response: Response): void {
+    const cookieOptions: CookieOptions = {
+      httpOnly: true,
+      secure: this.isProduction(),
+      sameSite: 'strict',
+      path: '/',
+    };
+
+    response.clearCookie(ACCESS_TOKEN_COOKIE_NAME, cookieOptions);
+    response.clearCookie(REFRESH_TOKEN_COOKIE_NAME, cookieOptions);
   }
 
   private getAuthCookieOptions(expiresInConfigKey: string): CookieOptions {
