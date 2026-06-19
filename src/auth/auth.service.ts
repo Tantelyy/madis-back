@@ -6,8 +6,8 @@ import { compare } from 'bcryptjs';
 import { StringValue } from 'ms';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { AuthTokens } from './interfaces/auth-tokens.interface';
 import { AuthTokenPayload } from './interfaces/auth-token-payload.interface';
-import { LoginResponse } from './interfaces/login-response.interface';
 
 const AUTH_USER_INCLUDE = {
   role: true,
@@ -33,7 +33,7 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async login(loginDto: LoginDto): Promise<LoginResponse> {
+  async login(loginDto: LoginDto): Promise<AuthTokens> {
     const user = await this.findActiveUserByEmail(loginDto.email);
 
     if (!user) {
@@ -61,7 +61,7 @@ export class AuthService {
     });
   }
 
-  private async generateTokens(user: AuthUser): Promise<LoginResponse> {
+  private async generateTokens(user: AuthUser): Promise<AuthTokens> {
     const payload: AuthTokenPayload = {
       sub: user.id,
       email: user.email,
