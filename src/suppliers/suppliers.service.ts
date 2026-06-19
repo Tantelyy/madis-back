@@ -11,6 +11,24 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { SupplierEntity } from './entities/supplier.entity';
 import { PaginatedSuppliers } from './interfaces/paginated-suppliers.interface';
 
+const SUPPLIER_USER_SELECT = {
+  id: true,
+  userName: true,
+  email: true,
+} satisfies Prisma.UserSelect;
+
+const SUPPLIER_INCLUDE = {
+  createdByUser: {
+    select: SUPPLIER_USER_SELECT,
+  },
+  updatedByUser: {
+    select: SUPPLIER_USER_SELECT,
+  },
+  deletedByUser: {
+    select: SUPPLIER_USER_SELECT,
+  },
+} satisfies Prisma.SupplierInclude;
+
 @Injectable()
 export class SuppliersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -34,6 +52,7 @@ export class SuppliersService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.supplier.findMany({
         where,
+        include: SUPPLIER_INCLUDE,
         orderBy,
         skip,
         take: query.limit,
@@ -90,6 +109,7 @@ export class SuppliersService {
         id,
         deletedAt: null,
       },
+      include: SUPPLIER_INCLUDE,
     });
 
     if (!supplier) {
