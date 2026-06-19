@@ -72,6 +72,21 @@ async function seed(): Promise<void> {
       },
     });
 
+    await prisma.permission.upsert({
+      where: { code: 'CAN_SUPPLIERS' },
+      update: {
+        label: 'Can manage suppliers',
+        descriptions: 'Allows access to supplier management features.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Can manage suppliers',
+        code: 'CAN_SUPPLIERS',
+        descriptions: 'Allows access to supplier management features.',
+      },
+    });
+
     await prisma.rolePermission.upsert({
       where: {
         roleId_permissionId: {
