@@ -13,7 +13,7 @@ export class CreateSupplierDto {
   @IsOptional()
   phone?: string;
 
-  @IsEmail({}, { message: "Veuillez entrer une adresse email valide" })
+  @IsEmail({}, { message: 'Veuillez entrer une adresse email valide' })
   @IsOptional()
   email?: string;
 }

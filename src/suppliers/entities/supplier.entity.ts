@@ -1,3 +1,9 @@
+export class SupplierUserEntity {
+  id!: number;
+  userName!: string;
+  email!: string;
+}
+
 export class SupplierEntity {
   id!: number;
   name!: string;
@@ -10,4 +16,7 @@ export class SupplierEntity {
   createdBy!: number;
   updatedBy!: number | null;
   deletedBy!: number | null;
+  createdByUser?: SupplierUserEntity;
+  updatedByUser?: SupplierUserEntity | null;
+  deletedByUser?: SupplierUserEntity | null;
 }
