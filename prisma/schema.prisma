@@ -20,6 +20,9 @@ model User {
   createdSuppliers Supplier[]      @relation("SupplierCreatedBy")
   updatedSuppliers Supplier[]      @relation("SupplierUpdatedBy")
   deletedSuppliers Supplier[]      @relation("SupplierDeletedBy")
+  createdProducts  Product[]       @relation("ProductCreatedBy")
+  updatedProducts  Product[]       @relation("ProductUpdatedBy")
+  deletedProducts  Product[]       @relation("ProductDeletedBy")
 
   @@map("Users")
 }
@@ -103,4 +106,71 @@ model Supplier {
   deletedByUser User?     @relation("SupplierDeletedBy", fields: [deletedBy], references: [id])
 
   @@map("Suppliers")
+}
+
+model ProductMark {
+  id        Int       @id @default(autoincrement()) @map("ID")
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("ProductMarks")
+}
+
+model ProductSpecification {
+  id            Int       @id @default(autoincrement()) @map("ID")
+  specification String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  products      Product[]
+
+  @@map("ProductSpecifications")
+}
+
+model ProductFormat {
+  id        Int       @id @default(autoincrement()) @map("ID")
+  format    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("ProductFormats")
+}
+
+model ProductType {
+  id        Int       @id @default(autoincrement()) @map("ID")
+  type      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("ProductTypes")
+}
+
+model Product {
+  id              Int                  @id @default(autoincrement()) @map("ID")
+  name            String
+  reference       String               @unique
+  markId          Int
+  specificationId Int
+  formatId        Int
+  productTypeId   Int
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
+  deletedBy       Int?
+  createdBy       Int
+  image           String?
+  updatedBy       Int?
+  mark            ProductMark          @relation(fields: [markId], references: [id])
+  specification   ProductSpecification @relation(fields: [specificationId], references: [id])
+  format          ProductFormat        @relation(fields: [formatId], references: [id])
+  productType     ProductType          @relation(fields: [productTypeId], references: [id])
+  createdByUser   User                 @relation("ProductCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser   User?                @relation("ProductUpdatedBy", fields: [updatedBy], references: [id])
+  deletedByUser   User?                @relation("ProductDeletedBy", fields: [deletedBy], references: [id])
+
+  @@map("Products")
 }
