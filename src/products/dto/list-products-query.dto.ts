@@ -1,18 +1,19 @@
 import { Transform, TransformFnParams } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export const SUPPLIER_SORT_FIELDS = [
+export const PRODUCT_SORT_FIELDS = [
   'name',
+  'reference',
   'createdAt',
   'updatedAt',
   'deletedAt',
 ] as const;
-export const SORT_ORDERS = ['asc', 'desc'] as const;
+export const PRODUCT_SORT_ORDERS = ['asc', 'desc'] as const;
 
-export type SupplierSortField = (typeof SUPPLIER_SORT_FIELDS)[number];
-export type SortOrder = (typeof SORT_ORDERS)[number];
+export type ProductSortField = (typeof PRODUCT_SORT_FIELDS)[number];
+export type ProductSortOrder = (typeof PRODUCT_SORT_ORDERS)[number];
 
-export class ListSuppliersQueryDto {
+export class ListProductsQueryDto {
   @Transform(({ value }: TransformFnParams) => Number(value))
   @IsInt()
   @Min(1)
@@ -30,11 +31,11 @@ export class ListSuppliersQueryDto {
   @IsOptional()
   search?: string;
 
-  @IsIn(SUPPLIER_SORT_FIELDS)
+  @IsIn(PRODUCT_SORT_FIELDS)
   @IsOptional()
-  sortBy: SupplierSortField = 'createdAt';
+  sortBy: ProductSortField = 'createdAt';
 
-  @IsIn(SORT_ORDERS)
+  @IsIn(PRODUCT_SORT_ORDERS)
   @IsOptional()
-  order: SortOrder = 'desc';
+  order: ProductSortOrder = 'desc';
 }

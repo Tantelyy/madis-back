@@ -87,6 +87,21 @@ async function seed(): Promise<void> {
       },
     });
 
+    await prisma.permission.upsert({
+      where: { code: 'CAN_PRODUCTS' },
+      update: {
+        label: 'Can manage products',
+        descriptions: 'Allows access to product management features.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Can manage products',
+        code: 'CAN_PRODUCTS',
+        descriptions: 'Allows access to product management features.',
+      },
+    });
+
     await prisma.rolePermission.upsert({
       where: {
         roleId_permissionId: {

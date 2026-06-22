@@ -145,6 +145,8 @@ export class SuppliersService {
     order: SortOrder,
   ): Prisma.SupplierOrderByWithRelationInput {
     switch (sortBy) {
+      case 'name':
+        return { name: order };
       case 'updatedAt':
         return { updatedAt: order };
       case 'deletedAt':
