@@ -1,0 +1,2 @@
+-- This migration is intentionally empty.
+-- Pricing grids and pricing rules are created in 20260625120000_add_pricing_grids.
