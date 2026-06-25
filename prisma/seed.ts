@@ -319,6 +319,21 @@ async function seed(): Promise<void> {
       },
     });
 
+    await prisma.permission.upsert({
+      where: { code: 'CAN_MARGE' },
+      update: {
+        label: 'Can manage regulatory margin',
+        descriptions: 'Allows access to regulatory margin management features.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Can manage regulatory margin',
+        code: 'CAN_MARGE',
+        descriptions: 'Allows access to regulatory margin management features.',
+      },
+    });
+
     await prisma.rolePermission.upsert({
       where: {
         roleId_permissionId: {
