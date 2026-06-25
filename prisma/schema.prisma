@@ -7,24 +7,31 @@ datasource db {
 }
 
 model User {
-  id              Int              @id @default(autoincrement()) @map("ID")
-  email           String           @unique
-  password        String
-  userName        String
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  deletedAt       DateTime?
-  roleId          Int
-  role            Role             @relation(fields: [roleId], references: [id])
-  userPermissions UserPermission[]
-  createdSuppliers Supplier[]      @relation("SupplierCreatedBy")
-  updatedSuppliers Supplier[]      @relation("SupplierUpdatedBy")
-  deletedSuppliers Supplier[]      @relation("SupplierDeletedBy")
-  createdProducts  Product[]       @relation("ProductCreatedBy")
-  updatedProducts  Product[]       @relation("ProductUpdatedBy")
-  deletedProducts  Product[]       @relation("ProductDeletedBy")
+  id                  Int              @id @default(autoincrement()) @map("ID")
+  email               String           @unique
+  password            String
+  userName            String
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  deletedAt           DateTime?
+  roleId              Int
+  role                Role             @relation(fields: [roleId], references: [id])
+  userPermissions     UserPermission[]
+  createdSuppliers    Supplier[]       @relation("SupplierCreatedBy")
+  updatedSuppliers    Supplier[]       @relation("SupplierUpdatedBy")
+  deletedSuppliers    Supplier[]       @relation("SupplierDeletedBy")
+  createdProducts     Product[]        @relation("ProductCreatedBy")
+  updatedProducts     Product[]        @relation("ProductUpdatedBy")
+  deletedProducts     Product[]        @relation("ProductDeletedBy")
+  createdPricingGrids PricingGrid[]    @relation("PricingGridCreatedBy")
 
   @@map("Users")
+}
+
+enum PricingGridStatus {
+  ACTIVE
+  ARCHIVED
+  DRAFT
 }
 
 model Role {
@@ -173,4 +180,35 @@ model Product {
   deletedByUser   User?                @relation("ProductDeletedBy", fields: [deletedBy], references: [id])
 
   @@map("Products")
+}
+
+model PricingGrid {
+  id            Int               @id @default(autoincrement()) @map("ID")
+  status        PricingGridStatus
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdAt     DateTime          @default(now())
+  createdBy     Int
+  updatedAt     DateTime          @updatedAt
+  createdByUser User              @relation("PricingGridCreatedBy", fields: [createdBy], references: [id])
+  pricingRules  PricingRule[]
+
+  @@unique([effectiveFrom])
+  @@map("PricingGrids")
+}
+
+model PricingRule {
+  id                     Int         @id @default(autoincrement()) @map("ID")
+  pricingGridId          Int
+  minPurchasePrice       Int
+  maxPurchasePrice       Int
+  retailMarginPercent    Decimal     @db.Decimal(5, 2)
+  wholesaleMarginPercent Decimal     @map("wholeSaleMarginPercent") @db.Decimal(5, 2)
+  retailAverage          Decimal     @db.Decimal(12, 2)
+  wholesaleAverage       Decimal     @map("wholeSaleAverage") @db.Decimal(12, 2)
+  pricingGrid            PricingGrid @relation(fields: [pricingGridId], references: [id], onDelete: Cascade)
+
+  @@unique([pricingGridId, minPurchasePrice, maxPurchasePrice])
+  @@index([pricingGridId])
+  @@map("PricingRules")
 }
