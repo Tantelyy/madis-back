@@ -1,0 +1,55 @@
+import { Type } from 'class-transformer';
+import {
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  Min,
+} from 'class-validator';
+
+export class CreateInventoryDto {
+  @Type(() => Number)
+  @IsInt({ message: 'Le produit est invalide' })
+  @Min(1, { message: 'Le produit est invalide' })
+  productId!: number;
+
+  @Type(() => Number)
+  @IsInt({ message: 'La quantite est invalide' })
+  @Min(1, { message: 'La quantite doit etre superieure a 0' })
+  quantity!: number;
+
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: "Le prix d'achat est invalide" },
+  )
+  @Min(0, { message: "Le prix d'achat doit etre positif" })
+  purchasePrice!: number;
+
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'Le prix de vente est invalide' },
+  )
+  @Min(0, { message: 'Le prix de vente doit etre positif' })
+  @IsOptional()
+  salePrice?: number;
+
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'Le prix de vente en gros est invalide' },
+  )
+  @Min(0, { message: 'Le prix de vente en gros doit etre positif' })
+  @IsOptional()
+  wholesalePrice?: number;
+
+  @Type(() => Number)
+  @IsInt({ message: 'Le fournisseur est invalide' })
+  @Min(1, { message: 'Le fournisseur est invalide' })
+  supplierId!: number;
+
+  @IsDateString({}, { message: "La date d'expiration est invalide" })
+  @IsOptional()
+  expiredAt?: string;
+}
