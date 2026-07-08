@@ -11,10 +11,27 @@ import { AuthSession } from './interfaces/auth-session.interface';
 import { AuthTokens } from './interfaces/auth-tokens.interface';
 
 const AUTH_USER_INCLUDE = {
-  role: true,
+  role: {
+    include: {
+      rolePermissions: {
+        where: {
+          deletedAt: null,
+          permission: {
+            deletedAt: null,
+          },
+        },
+        include: {
+          permission: true,
+        },
+      },
+    },
+  },
   userPermissions: {
     where: {
       deletedAt: null,
+      permission: {
+        deletedAt: null,
+      },
     },
     include: {
       permission: true,
@@ -56,9 +73,7 @@ export class AuthService {
         email: user.email,
         userName: user.userName,
         role: user.role.label,
-        permissions: user.userPermissions.map(
-          (userPermission) => userPermission.permission.code,
-        ),
+        permissions: this.getPermissionCodes(user),
       },
     };
   }
@@ -78,9 +93,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role.label,
-      permissions: user.userPermissions.map(
-        (userPermission) => userPermission.permission.code,
-      ),
+      permissions: this.getPermissionCodes(user),
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -102,5 +115,18 @@ export class AuthService {
 
   private getJwtExpiresIn(configKey: string): StringValue {
     return this.configService.getOrThrow<StringValue>(configKey);
+  }
+
+  private getPermissionCodes(user: AuthUser): string[] {
+    const userPermissionCodes = user.userPermissions.map(
+      (userPermission) => userPermission.permission.code,
+    );
+    const rolePermissionCodes = user.role.rolePermissions.map(
+      (rolePermission) => rolePermission.permission.code,
+    );
+
+    return Array.from(
+      new Set([...userPermissionCodes, ...rolePermissionCodes]),
+    );
   }
 }

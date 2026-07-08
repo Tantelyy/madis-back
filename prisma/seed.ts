@@ -262,90 +262,117 @@ async function seed(): Promise<void> {
     const canSellPermission = await prisma.permission.upsert({
       where: { code: 'CAN_SELL' },
       update: {
-        label: 'Can sell',
-        descriptions: 'Allows access to selling features.',
+        label: 'Vendre',
+        descriptions: 'Permet d’accéder aux fonctionnalités de vente.',
         deletedAt: null,
         deletedBy: null,
       },
       create: {
-        label: 'Can sell',
+        label: 'Vendre',
         code: 'CAN_SELL',
-        descriptions: 'Allows access to selling features.',
+        descriptions: 'Permet d’accéder aux fonctionnalités de vente.',
       },
     });
 
     const allPermission = await prisma.permission.upsert({
       where: { code: 'ALL' },
       update: {
-        label: 'All permissions',
-        descriptions: 'Allows access to all application features.',
+        label: 'Toutes les permissions',
+        descriptions:
+          'Donne accès à toutes les fonctionnalités de l’application.',
         deletedAt: null,
         deletedBy: null,
       },
       create: {
-        label: 'All permissions',
+        label: 'Toutes les permissions',
         code: 'ALL',
-        descriptions: 'Allows access to all application features.',
+        descriptions:
+          'Donne accès à toutes les fonctionnalités de l’application.',
       },
     });
 
     await prisma.permission.upsert({
       where: { code: 'CAN_SUPPLIERS' },
       update: {
-        label: 'Can manage suppliers',
-        descriptions: 'Allows access to supplier management features.',
+        label: 'Gérer les fournisseurs',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les fournisseurs.',
         deletedAt: null,
         deletedBy: null,
       },
       create: {
-        label: 'Can manage suppliers',
+        label: 'Gérer les fournisseurs',
         code: 'CAN_SUPPLIERS',
-        descriptions: 'Allows access to supplier management features.',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les fournisseurs.',
       },
     });
 
     await prisma.permission.upsert({
       where: { code: 'CAN_PRODUCTS' },
       update: {
-        label: 'Can manage products',
-        descriptions: 'Allows access to product management features.',
+        label: 'Gérer les produits',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les produits et leurs référentiels.',
         deletedAt: null,
         deletedBy: null,
       },
       create: {
-        label: 'Can manage products',
+        label: 'Gérer les produits',
         code: 'CAN_PRODUCTS',
-        descriptions: 'Allows access to product management features.',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les produits et leurs référentiels.',
       },
     });
 
     await prisma.permission.upsert({
       where: { code: 'CAN_MARGE' },
       update: {
-        label: 'Can manage regulatory margin',
-        descriptions: 'Allows access to regulatory margin management features.',
+        label: 'Gérer la marge réglementaire',
+        descriptions:
+          'Permet de consulter et paramétrer les grilles de marge réglementaire.',
         deletedAt: null,
         deletedBy: null,
       },
       create: {
-        label: 'Can manage regulatory margin',
+        label: 'Gérer la marge réglementaire',
         code: 'CAN_MARGE',
-        descriptions: 'Allows access to regulatory margin management features.',
+        descriptions:
+          'Permet de consulter et paramétrer les grilles de marge réglementaire.',
       },
     });
 
     await prisma.permission.upsert({
       where: { code: 'CAN_INVENTORY' },
       update: {
-        label: 'Can manage inventory',
-        descriptions: 'Allows access to inventory management features.',
+        label: 'Gérer le stock',
+        descriptions:
+          'Permet de consulter les stocks, enregistrer les entrées et suivre les mouvements.',
         deletedAt: null,
         deletedBy: null,
       },
       create: {
-        label: 'Can manage inventory',
+        label: 'Gérer le stock',
         code: 'CAN_INVENTORY',
-        descriptions: 'Allows access to inventory management features.',
+        descriptions:
+          'Permet de consulter les stocks, enregistrer les entrées et suivre les mouvements.',
+      },
+    });
+
+    await prisma.permission.upsert({
+      where: { code: 'CAN_MANAGE_ACCOUNTS' },
+      update: {
+        label: 'Gérer les comptes',
+        descriptions:
+          'Permet de créer, modifier et désactiver les comptes utilisateurs ainsi que leurs permissions.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Gérer les comptes',
+        code: 'CAN_MANAGE_ACCOUNTS',
+        descriptions:
+          'Permet de créer, modifier et désactiver les comptes utilisateurs ainsi que leurs permissions.',
       },
     });
 

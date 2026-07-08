@@ -4,7 +4,7 @@ import { PermissionEntity } from '../../permissions/entities/permission.entity';
 export class UserEntity {
   id!: number;
   email!: string;
-  password!: string;
+  password?: string;
   userName!: string;
   createdAt!: Date;
   updatedAt!: Date;
