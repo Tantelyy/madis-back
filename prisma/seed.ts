@@ -334,6 +334,21 @@ async function seed(): Promise<void> {
       },
     });
 
+    await prisma.permission.upsert({
+      where: { code: 'CAN_INVENTORY' },
+      update: {
+        label: 'Can manage inventory',
+        descriptions: 'Allows access to inventory management features.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Can manage inventory',
+        code: 'CAN_INVENTORY',
+        descriptions: 'Allows access to inventory management features.',
+      },
+    });
+
     await prisma.rolePermission.upsert({
       where: {
         roleId_permissionId: {

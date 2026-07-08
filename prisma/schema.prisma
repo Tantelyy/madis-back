@@ -7,23 +7,26 @@ datasource db {
 }
 
 model User {
-  id                  Int              @id @default(autoincrement()) @map("ID")
-  email               String           @unique
+  id                  Int                 @id @default(autoincrement()) @map("ID")
+  email               String              @unique
   password            String
   userName            String
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   deletedAt           DateTime?
   roleId              Int
-  role                Role             @relation(fields: [roleId], references: [id])
+  role                Role                @relation(fields: [roleId], references: [id])
   userPermissions     UserPermission[]
-  createdSuppliers    Supplier[]       @relation("SupplierCreatedBy")
-  updatedSuppliers    Supplier[]       @relation("SupplierUpdatedBy")
-  deletedSuppliers    Supplier[]       @relation("SupplierDeletedBy")
-  createdProducts     Product[]        @relation("ProductCreatedBy")
-  updatedProducts     Product[]        @relation("ProductUpdatedBy")
-  deletedProducts     Product[]        @relation("ProductDeletedBy")
-  createdPricingGrids PricingGrid[]    @relation("PricingGridCreatedBy")
+  createdSuppliers    Supplier[]          @relation("SupplierCreatedBy")
+  updatedSuppliers    Supplier[]          @relation("SupplierUpdatedBy")
+  deletedSuppliers    Supplier[]          @relation("SupplierDeletedBy")
+  createdProducts     Product[]           @relation("ProductCreatedBy")
+  updatedProducts     Product[]           @relation("ProductUpdatedBy")
+  deletedProducts     Product[]           @relation("ProductDeletedBy")
+  createdPricingGrids PricingGrid[]       @relation("PricingGridCreatedBy")
+  createdInventories  Inventory[]         @relation("InventoryCreatedBy")
+  updatedInventories  Inventory[]         @relation("InventoryUpdatedBy")
+  inventoryMovements  InventoryMovement[] @relation("InventoryMovementActor")
 
   @@map("Users")
 }
@@ -32,6 +35,11 @@ enum PricingGridStatus {
   ACTIVE
   ARCHIVED
   DRAFT
+}
+
+enum InventoryMovementType {
+  INCOMING
+  ADJUSTMENT
 }
 
 model Role {
@@ -97,20 +105,21 @@ model RolePermission {
 }
 
 model Supplier {
-  id            Int       @id @default(autoincrement()) @map("ID")
+  id            Int         @id @default(autoincrement()) @map("ID")
   name          String
   address       String?
   phone         String?
   email         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
   deletedAt     DateTime?
   createdBy     Int
   updatedBy     Int?
   deletedBy     Int?
-  createdByUser User      @relation("SupplierCreatedBy", fields: [createdBy], references: [id])
-  updatedByUser User?     @relation("SupplierUpdatedBy", fields: [updatedBy], references: [id])
-  deletedByUser User?     @relation("SupplierDeletedBy", fields: [deletedBy], references: [id])
+  createdByUser User        @relation("SupplierCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser User?       @relation("SupplierUpdatedBy", fields: [updatedBy], references: [id])
+  deletedByUser User?       @relation("SupplierDeletedBy", fields: [deletedBy], references: [id])
+  inventories   Inventory[]
 
   @@map("Suppliers")
 }
@@ -178,8 +187,54 @@ model Product {
   createdByUser   User                 @relation("ProductCreatedBy", fields: [createdBy], references: [id])
   updatedByUser   User?                @relation("ProductUpdatedBy", fields: [updatedBy], references: [id])
   deletedByUser   User?                @relation("ProductDeletedBy", fields: [deletedBy], references: [id])
+  inventories     Inventory[]
 
   @@map("Products")
+}
+
+model Inventory {
+  id                 Int                 @id @default(autoincrement()) @map("ID")
+  productId          Int
+  quantity           Int
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  createdBy          Int
+  purchasePrice      Decimal             @db.Decimal(12, 2)
+  salePrice          Decimal             @db.Decimal(12, 2)
+  updatedBy          Int?
+  supplierId         Int
+  wholesalePrice     Decimal             @map("wholeSalePrice") @db.Decimal(12, 2)
+  remainingQuantity  Int
+  expiredAt          DateTime?
+  product            Product             @relation(fields: [productId], references: [id])
+  supplier           Supplier            @relation(fields: [supplierId], references: [id])
+  createdByUser      User                @relation("InventoryCreatedBy", fields: [createdBy], references: [id])
+  updatedByUser      User?               @relation("InventoryUpdatedBy", fields: [updatedBy], references: [id])
+  inventoryMovements InventoryMovement[]
+
+  @@index([productId])
+  @@index([supplierId])
+  @@map("Inventories")
+}
+
+model InventoryMovement {
+  id               Int                   @id @default(autoincrement()) @map("ID")
+  inventoryId      Int
+  incomingQuantity Int
+  outgoingQuantity Int
+  actorId          Int
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  purchasePrice    Decimal               @db.Decimal(12, 2)
+  salePrice        Decimal               @db.Decimal(12, 2)
+  type             InventoryMovementType
+  wholesalePrice   Decimal               @map("wholeSalePrice") @db.Decimal(12, 2)
+  inventory        Inventory             @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  actor            User                  @relation("InventoryMovementActor", fields: [actorId], references: [id])
+
+  @@index([inventoryId])
+  @@index([actorId])
+  @@map("InventoryMovement")
 }
 
 model PricingGrid {
