@@ -1,4 +1,5 @@
 import { InventoryMovementType } from '@prisma/client';
+import { InventoryEntity } from './inventory.entity';
 
 export class InventoryMovementEntity {
   id!: number;
@@ -12,4 +13,10 @@ export class InventoryMovementEntity {
   salePrice!: string;
   type!: InventoryMovementType;
   wholesalePrice!: string;
+  actor?: {
+    id: number;
+    userName: string;
+    email: string;
+  };
+  inventory?: InventoryEntity;
 }

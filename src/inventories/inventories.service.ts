@@ -10,9 +10,12 @@ import {
   InventorySortField,
   InventorySortOrder,
   ListInventoriesQueryDto,
+  ListInventoryMovementsQueryDto,
 } from './dto/list-inventories-query.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
+import { InventoryMovementEntity } from './entities/inventory-movement.entity';
 import { InventoryEntity } from './entities/inventory.entity';
+import { PaginatedInventoryMovements } from './interfaces/paginated-inventory-movements.interface';
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
 
 const INVENTORY_USER_SELECT = {
@@ -43,6 +46,19 @@ const INVENTORY_INCLUDE = {
 
 type InventoryPayload = Prisma.InventoryGetPayload<{
   include: typeof INVENTORY_INCLUDE;
+}>;
+
+const INVENTORY_MOVEMENT_INCLUDE = {
+  actor: {
+    select: INVENTORY_USER_SELECT,
+  },
+  inventory: {
+    include: INVENTORY_INCLUDE,
+  },
+} satisfies Prisma.InventoryMovementInclude;
+
+type InventoryMovementPayload = Prisma.InventoryMovementGetPayload<{
+  include: typeof INVENTORY_MOVEMENT_INCLUDE;
 }>;
 
 interface InventoryPrices {
@@ -127,6 +143,24 @@ export class InventoriesService {
         totalPages: Math.ceil(total / query.limit),
       },
     };
+  }
+
+  async findAllMovements(
+    query: ListInventoryMovementsQueryDto,
+  ): Promise<PaginatedInventoryMovements> {
+    return this.findMovements(query, this.buildMovementListWhere(query));
+  }
+
+  async findInventoryMovements(
+    inventoryId: number,
+    query: ListInventoryMovementsQueryDto,
+  ): Promise<PaginatedInventoryMovements> {
+    await this.ensureInventoryExists(inventoryId);
+
+    return this.findMovements(
+      query,
+      this.buildMovementListWhere(query, inventoryId),
+    );
   }
 
   async update(
@@ -218,6 +252,17 @@ export class InventoriesService {
     }
 
     return inventory;
+  }
+
+  private async ensureInventoryExists(id: number): Promise<void> {
+    const inventory = await this.prisma.inventory.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!inventory) {
+      throw new NotFoundException('Ligne de stock introuvable.');
+    }
   }
 
   private async ensureProductExists(
@@ -355,6 +400,58 @@ export class InventoriesService {
     };
   }
 
+  private buildMovementListWhere(
+    query: ListInventoryMovementsQueryDto,
+    inventoryId?: number,
+  ): Prisma.InventoryMovementWhereInput {
+    const where: Prisma.InventoryMovementWhereInput = {
+      inventoryId: inventoryId ?? query.inventoryId,
+      type: query.type,
+    };
+    const trimmedSearch = query.search?.trim();
+
+    if (!trimmedSearch) {
+      return where;
+    }
+
+    return {
+      ...where,
+      OR: [
+        {
+          inventory: {
+            product: {
+              name: { contains: trimmedSearch, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          inventory: {
+            product: {
+              reference: { contains: trimmedSearch, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          inventory: {
+            supplier: {
+              name: { contains: trimmedSearch, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          actor: {
+            userName: { contains: trimmedSearch, mode: 'insensitive' },
+          },
+        },
+        {
+          actor: {
+            email: { contains: trimmedSearch, mode: 'insensitive' },
+          },
+        },
+      ],
+    };
+  }
+
   private buildOrderBy(
     sortBy: InventorySortField,
     order: InventorySortOrder,
@@ -384,6 +481,35 @@ export class InventoriesService {
     return value.toFixed(2);
   }
 
+  private async findMovements(
+    query: ListInventoryMovementsQueryDto,
+    where: Prisma.InventoryMovementWhereInput = {},
+  ): Promise<PaginatedInventoryMovements> {
+    const skip = (query.page - 1) * query.limit;
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.inventoryMovement.findMany({
+        where,
+        include: INVENTORY_MOVEMENT_INCLUDE,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: query.limit,
+      }),
+      this.prisma.inventoryMovement.count({ where }),
+    ]);
+
+    return {
+      data: data.map((movement) => this.mapInventoryMovement(movement)),
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
+  }
+
   private mapInventory(inventory: InventoryPayload): InventoryEntity {
     return {
       id: inventory.id,
@@ -403,6 +529,26 @@ export class InventoriesService {
       supplier: inventory.supplier,
       createdByUser: inventory.createdByUser,
       updatedByUser: inventory.updatedByUser,
+    };
+  }
+
+  private mapInventoryMovement(
+    movement: InventoryMovementPayload,
+  ): InventoryMovementEntity {
+    return {
+      id: movement.id,
+      inventoryId: movement.inventoryId,
+      incomingQuantity: movement.incomingQuantity,
+      outgoingQuantity: movement.outgoingQuantity,
+      actorId: movement.actorId,
+      createdAt: movement.createdAt,
+      updatedAt: movement.updatedAt,
+      purchasePrice: movement.purchasePrice.toFixed(2),
+      salePrice: movement.salePrice.toFixed(2),
+      type: movement.type,
+      wholesalePrice: movement.wholesalePrice.toFixed(2),
+      actor: movement.actor,
+      inventory: this.mapInventory(movement.inventory),
     };
   }
 }
