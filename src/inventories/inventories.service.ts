@@ -311,9 +311,9 @@ export class InventoriesService {
   ): Promise<InventoryPrices> {
     if (salePrice !== undefined && wholesalePrice !== undefined) {
       return {
-        purchasePrice: this.toPriceString(purchasePrice),
-        salePrice: this.toPriceString(salePrice),
-        wholesalePrice: this.toPriceString(wholesalePrice),
+        purchasePrice: this.toDecimalPriceString(purchasePrice),
+        salePrice: this.toRoundedPriceString(salePrice),
+        wholesalePrice: this.toRoundedPriceString(wholesalePrice),
       };
     }
 
@@ -323,9 +323,11 @@ export class InventoriesService {
       wholesalePrice === undefined
     ) {
       return {
-        purchasePrice: this.toPriceString(purchasePrice),
-        salePrice: this.toPriceString(fallbackPrices.salePrice),
-        wholesalePrice: this.toPriceString(fallbackPrices.wholesalePrice),
+        purchasePrice: this.toDecimalPriceString(purchasePrice),
+        salePrice: this.toRoundedPriceString(fallbackPrices.salePrice),
+        wholesalePrice: this.toRoundedPriceString(
+          fallbackPrices.wholesalePrice,
+        ),
       };
     }
 
@@ -335,11 +337,11 @@ export class InventoriesService {
     );
 
     return {
-      purchasePrice: this.toPriceString(purchasePrice),
-      salePrice: this.toPriceString(
+      purchasePrice: this.toDecimalPriceString(purchasePrice),
+      salePrice: this.toRoundedPriceString(
         salePrice ?? purchasePrice + pricingRule.retailAverage.toNumber(),
       ),
-      wholesalePrice: this.toPriceString(
+      wholesalePrice: this.toRoundedPriceString(
         wholesalePrice ??
           purchasePrice + pricingRule.wholesaleAverage.toNumber(),
       ),
@@ -477,8 +479,12 @@ export class InventoriesService {
     }
   }
 
-  private toPriceString(value: number): string {
+  private toDecimalPriceString(value: number): string {
     return value.toFixed(2);
+  }
+
+  private toRoundedPriceString(value: number): string {
+    return Math.round(value).toFixed(2);
   }
 
   private async findMovements(
