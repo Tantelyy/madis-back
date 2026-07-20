@@ -27,6 +27,8 @@ model User {
   createdInventories  Inventory[]         @relation("InventoryCreatedBy")
   updatedInventories  Inventory[]         @relation("InventoryUpdatedBy")
   inventoryMovements  InventoryMovement[] @relation("InventoryMovementActor")
+  soldCarts           Cart[]              @relation("CartSoldBy")
+  validatedCarts      Cart[]              @relation("CartValidatedBy")
 
   @@map("Users")
 }
@@ -40,6 +42,19 @@ enum PricingGridStatus {
 enum InventoryMovementType {
   INCOMING
   ADJUSTMENT
+}
+
+enum CartStatus {
+  PENDING
+  VALIDATED
+  PAID
+}
+
+enum PaymentMethod {
+  MVOLA
+  AIRTEL_MONEY @map("AIRTEL MONEY")
+  ORANGE_MONEY @map("ORANGE MONEY")
+  CASH
 }
 
 model Role {
@@ -211,6 +226,7 @@ model Inventory {
   createdByUser      User                @relation("InventoryCreatedBy", fields: [createdBy], references: [id])
   updatedByUser      User?               @relation("InventoryUpdatedBy", fields: [updatedBy], references: [id])
   inventoryMovements InventoryMovement[]
+  cartDetails        CartDetail[]
 
   @@index([productId])
   @@index([supplierId])
@@ -235,6 +251,44 @@ model InventoryMovement {
   @@index([inventoryId])
   @@index([actorId])
   @@map("InventoryMovement")
+}
+
+model Cart {
+  id              Int           @id @default(autoincrement()) @map("ID")
+  soldBy          Int
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  status          CartStatus    @default(PENDING)
+  validatedBy     Int?
+  totalPrice      Decimal       @db.Decimal(12, 2)
+  customerName    String
+  customerContact String
+  customerAddress String
+  paymentMethod   PaymentMethod
+  seller          User          @relation("CartSoldBy", fields: [soldBy], references: [id])
+  validator       User?         @relation("CartValidatedBy", fields: [validatedBy], references: [id])
+  cartDetails     CartDetail[]
+
+  @@index([soldBy])
+  @@index([validatedBy])
+  @@map("Carts")
+}
+
+model CartDetail {
+  id             Int       @id @default(autoincrement()) @map("ID")
+  cartId         Int
+  inventoryId    Int
+  soldFor        Decimal   @db.Decimal(12, 2)
+  quantity       Int
+  wholesale      Boolean   @default(false) @map("wholeSale")
+  specialOfferId Int?
+  cart           Cart      @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  inventory      Inventory @relation(fields: [inventoryId], references: [id])
+
+  @@index([cartId])
+  @@index([inventoryId])
+  @@index([specialOfferId])
+  @@map("CartDetails")
 }
 
 model PricingGrid {
