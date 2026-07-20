@@ -1,4 +1,5 @@
 import { ProductEntity } from '../../products/entities/product.entity';
+import type { InventorySpecialOfferEntity } from '../../special-offers/entities/inventory-special-offer.entity';
 import { SupplierEntity } from '../../suppliers/entities/supplier.entity';
 
 export class InventoryUserEntity {
@@ -25,4 +26,5 @@ export class InventoryEntity {
   supplier?: SupplierEntity;
   createdByUser?: InventoryUserEntity;
   updatedByUser?: InventoryUserEntity | null;
+  inventorySpecialOffers?: InventorySpecialOfferEntity[];
 }
