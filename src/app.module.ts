@@ -9,6 +9,8 @@ import { PricingGridsModule } from './pricing-grids/pricing-grids.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { RolesModule } from './roles/roles.module';
+import { SalesModule } from './sales/sales.module';
+import { SpecialOffersModule } from './special-offers/special-offers.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { UsersModule } from './users/users.module';
 
@@ -26,6 +28,8 @@ import { UsersModule } from './users/users.module';
     SuppliersModule,
     ProductsModule,
     InventoriesModule,
+    SalesModule,
+    SpecialOffersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
