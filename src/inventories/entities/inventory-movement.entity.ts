@@ -13,6 +13,7 @@ export class InventoryMovementEntity {
   salePrice!: string;
   type!: InventoryMovementType;
   wholesalePrice!: string;
+  cartId!: number | null;
   actor?: {
     id: number;
     userName: string;

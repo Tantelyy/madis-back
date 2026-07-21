@@ -553,6 +553,7 @@ export class InventoriesService {
       salePrice: movement.salePrice.toFixed(2),
       type: movement.type,
       wholesalePrice: movement.wholesalePrice.toFixed(2),
+      cartId: movement.cartId,
       actor: movement.actor,
       inventory: this.mapInventory(movement.inventory),
     };
