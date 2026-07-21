@@ -13,7 +13,15 @@ export class CartDetailEntity {
   discountAmount!: string | null;
   wholesale!: boolean;
   specialOfferId!: number | null;
+  product?: CartDetailProductEntity;
   cart?: CartEntity;
   inventory?: InventoryEntity;
   specialOffer?: SpecialOfferEntity | null;
+}
+
+export class CartDetailProductEntity {
+  id!: number;
+  name!: string;
+  reference!: string;
+  image!: string | null;
 }

@@ -25,6 +25,7 @@ import {
   calculateSalePricing,
 } from './utils/promotion-calculator.util';
 import { selectLatestInventory } from './utils/latest-inventory.util';
+import { getRestrictedSellerId } from './utils/sale-access.util';
 
 const SALE_USER_SELECT = {
   id: true,
@@ -39,7 +40,15 @@ const SALE_INCLUDE = {
   validator: {
     select: SALE_USER_SELECT,
   },
-  cartDetails: true,
+  cartDetails: {
+    include: {
+      inventory: {
+        include: {
+          product: true,
+        },
+      },
+    },
+  },
   inventoryMovements: {
     include: {
       actor: {
@@ -139,7 +148,7 @@ export class SalesService {
           customerName: dto.customerName.trim(),
           customerContact: dto.customerContact.trim(),
           customerAddress: dto.customerAddress.trim(),
-          paymentMethod: null,
+          paymentMethod: dto.paymentMethod,
           cartDetails: {
             create: preparedItems.map((item) => ({
               inventoryId: item.inventory.id,
@@ -203,8 +212,11 @@ export class SalesService {
     };
   }
 
-  async findAll(query: ListSalesQueryDto): Promise<PaginatedSales> {
-    const where = this.buildListWhere(query);
+  async findAll(
+    query: ListSalesQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<PaginatedSales> {
+    const where = this.buildListWhere(query, user);
     const skip = (query.page - 1) * query.limit;
     const [data, total] = await this.prisma.$transaction([
       this.prisma.cart.findMany({
@@ -228,9 +240,9 @@ export class SalesService {
     };
   }
 
-  async findOne(id: number): Promise<CartEntity> {
-    const sale = await this.prisma.cart.findUnique({
-      where: { id },
+  async findOne(id: number, user: AuthenticatedUser): Promise<CartEntity> {
+    const sale = await this.prisma.cart.findFirst({
+      where: this.buildAccessibleSaleWhere(id, user),
       include: SALE_INCLUDE,
     });
 
@@ -241,12 +253,17 @@ export class SalesService {
     return this.mapSale(sale);
   }
 
-  async pay(id: number, paymentMethod: PaymentMethod): Promise<CartEntity> {
+  async pay(
+    id: number,
+    paymentMethod: PaymentMethod,
+    user: AuthenticatedUser,
+  ): Promise<CartEntity> {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.cart.updateMany({
         where: {
           id,
           status: CartStatus.VALIDATED,
+          soldBy: getRestrictedSellerId(user),
         },
         data: {
           status: CartStatus.PAID,
@@ -255,25 +272,40 @@ export class SalesService {
       });
 
       if (updated.count === 0) {
-        await this.throwInvalidSaleTransition(id, [CartStatus.VALIDATED], tx);
+        await this.throwInvalidSaleTransition(
+          id,
+          [CartStatus.VALIDATED],
+          user,
+          tx,
+        );
       }
 
       return this.findSaleInTransaction(id, tx);
     });
   }
 
-  async validate(id: number, adminId: number): Promise<CartEntity> {
+  async validate(
+    id: number,
+    paymentMethod: PaymentMethod,
+    admin: AuthenticatedUser,
+  ): Promise<CartEntity> {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.cart.updateMany({
         where: { id, status: CartStatus.PENDING },
         data: {
-          status: CartStatus.VALIDATED,
-          validatedBy: adminId,
+          status: CartStatus.PAID,
+          validatedBy: admin.id,
+          paymentMethod,
         },
       });
 
       if (updated.count === 0) {
-        await this.throwInvalidSaleTransition(id, [CartStatus.PENDING], tx);
+        await this.throwInvalidSaleTransition(
+          id,
+          [CartStatus.PENDING],
+          admin,
+          tx,
+        );
       }
 
       return this.findSaleInTransaction(id, tx);
@@ -283,12 +315,12 @@ export class SalesService {
   async refund(
     id: number,
     reason: string,
-    userId: number,
+    user: AuthenticatedUser,
   ): Promise<CartEntity> {
     return this.reverseSale(
       id,
       reason,
-      userId,
+      user,
       [CartStatus.PAID],
       CartStatus.REFUNDED,
       InventoryMovementType.REFUND,
@@ -298,12 +330,12 @@ export class SalesService {
   async cancel(
     id: number,
     reason: string,
-    userId: number,
+    user: AuthenticatedUser,
   ): Promise<CartEntity> {
     return this.reverseSale(
       id,
       reason,
-      userId,
+      user,
       [CartStatus.PENDING, CartStatus.VALIDATED],
       CartStatus.CANCELLED,
       InventoryMovementType.CANCELLATION,
@@ -313,14 +345,14 @@ export class SalesService {
   private async reverseSale(
     id: number,
     reason: string,
-    userId: number,
+    user: AuthenticatedUser,
     expectedStatuses: readonly CartStatus[],
     targetStatus: CartStatus,
     movementType: InventoryMovementType,
   ): Promise<CartEntity> {
     return this.prisma.$transaction(async (tx) => {
-      const cart = await tx.cart.findUnique({
-        where: { id },
+      const cart = await tx.cart.findFirst({
+        where: this.buildAccessibleSaleWhere(id, user),
         include: {
           cartDetails: {
             include: { inventory: true },
@@ -333,7 +365,11 @@ export class SalesService {
       }
 
       const updated = await tx.cart.updateMany({
-        where: { id, status: { in: [...expectedStatuses] } },
+        where: {
+          id,
+          status: { in: [...expectedStatuses] },
+          soldBy: getRestrictedSellerId(user),
+        },
         data: {
           status: targetStatus,
           reason: reason.trim(),
@@ -360,7 +396,7 @@ export class SalesService {
             inventoryId: detail.inventoryId,
             incomingQuantity: restoredQuantity,
             outgoingQuantity: 0,
-            actorId: userId,
+            actorId: user.id,
             type: movementType,
             purchasePrice: detail.inventory.purchasePrice,
             salePrice: detail.inventory.salePrice,
@@ -772,6 +808,8 @@ export class SalesService {
       image: product.image,
       retailPrice: retailPricing?.finalUnitPrice.toFixed(2) ?? null,
       wholesalePrice: wholesalePricing?.finalUnitPrice.toFixed(2) ?? null,
+      baseRetailPrice: latestInventory?.salePrice.toFixed(2) ?? null,
+      baseWholesalePrice: latestInventory?.wholesalePrice.toFixed(2) ?? null,
       totalStock: sellableInventories.reduce(
         (total, inventory) => total + inventory.remainingQuantity,
         0,
@@ -842,10 +880,11 @@ export class SalesService {
   private async throwInvalidSaleTransition(
     id: number,
     expectedStatuses: readonly CartStatus[],
+    user: AuthenticatedUser,
     tx: Prisma.TransactionClient,
   ): Promise<never> {
-    const cart = await tx.cart.findUnique({
-      where: { id },
+    const cart = await tx.cart.findFirst({
+      where: this.buildAccessibleSaleWhere(id, user),
       select: { status: true },
     });
 
@@ -874,10 +913,14 @@ export class SalesService {
     return this.mapSale(sale);
   }
 
-  private buildListWhere(query: ListSalesQueryDto): Prisma.CartWhereInput {
+  private buildListWhere(
+    query: ListSalesQueryDto,
+    user: AuthenticatedUser,
+  ): Prisma.CartWhereInput {
     const trimmedSearch = query.search?.trim();
 
     return {
+      soldBy: getRestrictedSellerId(user),
       status: query.status,
       paymentMethod: query.paymentMethod,
       OR: trimmedSearch
@@ -904,6 +947,16 @@ export class SalesService {
             },
           ]
         : undefined,
+    };
+  }
+
+  private buildAccessibleSaleWhere(
+    id: number,
+    user: AuthenticatedUser,
+  ): Prisma.CartWhereInput {
+    return {
+      id,
+      soldBy: getRestrictedSellerId(user),
     };
   }
 
@@ -934,6 +987,12 @@ export class SalesService {
         discountAmount: detail.discountAmount?.toFixed(2) ?? null,
         wholesale: detail.wholesale,
         specialOfferId: detail.specialOfferId,
+        product: {
+          id: detail.inventory.product.id,
+          name: detail.inventory.product.name,
+          reference: detail.inventory.product.reference,
+          image: detail.inventory.product.image,
+        },
       })),
       inventoryMovements: sale.inventoryMovements.map((movement) => ({
         id: movement.id,

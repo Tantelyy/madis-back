@@ -1,8 +1,10 @@
+import { PaymentMethod } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -43,6 +45,9 @@ export class CreateSaleDto {
   @IsNotEmpty({ message: "L'adresse du client est obligatoire." })
   @Matches(/\S/, { message: "L'adresse du client est obligatoire." })
   customerAddress!: string;
+
+  @IsEnum(PaymentMethod, { message: 'Le mode de paiement est invalide.' })
+  paymentMethod!: PaymentMethod;
 
   @IsArray({ message: 'Les produits de la vente sont invalides.' })
   @ArrayMinSize(1, { message: 'La vente doit contenir au moins un produit.' })

@@ -46,30 +46,38 @@ export class SalesController {
   }
 
   @Get()
-  findAll(@Query() query: ListSalesQueryDto): Promise<PaginatedSales> {
-    return this.salesService.findAll(query);
+  findAll(
+    @Query() query: ListSalesQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaginatedSales> {
+    return this.salesService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number): Promise<CartEntity> {
-    return this.salesService.findOne(id);
+  findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CartEntity> {
+    return this.salesService.findOne(id, user);
   }
 
   @Post(':id/pay')
   pay(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: PaySaleDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<CartEntity> {
-    return this.salesService.pay(id, dto.paymentMethod);
+    return this.salesService.pay(id, dto.paymentMethod, user);
   }
 
   @Post(':id/validate')
   @RequireAccess({ roles: ['ADMIN'], permissions: ['ALL'] })
   validate(
     @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PaySaleDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CartEntity> {
-    return this.salesService.validate(id, user.id);
+    return this.salesService.validate(id, dto.paymentMethod, user);
   }
 
   @Post(':id/refund')
@@ -78,7 +86,7 @@ export class SalesController {
     @Body() dto: SaleReversalDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CartEntity> {
-    return this.salesService.refund(id, dto.reason, user.id);
+    return this.salesService.refund(id, dto.reason, user);
   }
 
   @Post(':id/cancel')
@@ -87,6 +95,6 @@ export class SalesController {
     @Body() dto: SaleReversalDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CartEntity> {
-    return this.salesService.cancel(id, dto.reason, user.id);
+    return this.salesService.cancel(id, dto.reason, user);
   }
 }

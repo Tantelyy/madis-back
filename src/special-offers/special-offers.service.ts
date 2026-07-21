@@ -13,6 +13,7 @@ import { UpdateSpecialOfferDto } from './dto/update-special-offer.dto';
 import { InventorySpecialOfferEntity } from './entities/inventory-special-offer.entity';
 import { SpecialOfferEntity } from './entities/special-offer.entity';
 import { PaginatedSpecialOffers } from './interfaces/paginated-special-offers.interface';
+import { PROMOTION_LOCKING_CART_STATUSES } from './utils/promotion-lock.util';
 
 const SPECIAL_OFFER_USER_SELECT = {
   id: true,
@@ -35,7 +36,13 @@ const SPECIAL_OFFER_INCLUDE = {
     },
   },
   _count: {
-    select: { cartDetails: true },
+    select: {
+      cartDetails: {
+        where: {
+          cart: { status: { in: [...PROMOTION_LOCKING_CART_STATUSES] } },
+        },
+      },
+    },
   },
 } satisfies Prisma.SpecialOfferInclude;
 
@@ -144,7 +151,17 @@ export class SpecialOffersService {
           where: { id, deletedAt: null },
           select: {
             id: true,
-            _count: { select: { cartDetails: true } },
+            _count: {
+              select: {
+                cartDetails: {
+                  where: {
+                    cart: {
+                      status: { in: [...PROMOTION_LOCKING_CART_STATUSES] },
+                    },
+                  },
+                },
+              },
+            },
           },
         });
 
@@ -545,7 +562,7 @@ export class SpecialOffersService {
         ),
       ],
       limitDate: specialOffer.inventorySpecialOffers[0]?.limitDate ?? null,
-      hasSales: specialOffer._count.cartDetails > 0,
+      isLocked: specialOffer._count.cartDetails > 0,
       createdByUser: specialOffer.createdByUser,
       deletedByUser: specialOffer.deletedByUser,
       inventorySpecialOffers: specialOffer.inventorySpecialOffers.map(

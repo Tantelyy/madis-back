@@ -16,6 +16,8 @@ export class SaleCatalogProductEntity {
   image!: string | null;
   retailPrice!: string | null;
   wholesalePrice!: string | null;
+  baseRetailPrice!: string | null;
+  baseWholesalePrice!: string | null;
   totalStock!: number;
   promotionStock!: number;
   hasPromotion!: boolean;
