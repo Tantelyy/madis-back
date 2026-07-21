@@ -1,6 +1,14 @@
 import { Transform, TransformFnParams } from 'class-transformer';
 import { SpecialOfferType } from '@prisma/client';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class ListSpecialOffersQueryDto {
   @Transform(({ value }: TransformFnParams) => Number(value))
@@ -23,4 +31,8 @@ export class ListSpecialOffersQueryDto {
   @IsEnum(SpecialOfferType)
   @IsOptional()
   type?: SpecialOfferType;
+
+  @IsDateString({}, { message: 'La date de validite est invalide.' })
+  @IsOptional()
+  validAt?: string;
 }

@@ -14,9 +14,9 @@ import {
 
 export class CreateSaleItemDto {
   @Type(() => Number)
-  @IsInt({ message: 'La ligne de stock est invalide.' })
-  @Min(1, { message: 'La ligne de stock est invalide.' })
-  inventoryId!: number;
+  @IsInt({ message: 'Le produit est invalide.' })
+  @Min(1, { message: 'Le produit est invalide.' })
+  productId!: number;
 
   @Type(() => Number)
   @IsInt({ message: 'La quantite est invalide.' })

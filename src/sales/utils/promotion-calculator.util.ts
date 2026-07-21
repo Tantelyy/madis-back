@@ -27,8 +27,39 @@ interface PromotionResult {
   benefit: Prisma.Decimal;
 }
 
+export interface FreeQuantityPromotionAllocation {
+  paidQuantity: number;
+  freeQuantity: number;
+}
+
 const ZERO = new Prisma.Decimal(0);
 const ONE_HUNDRED = new Prisma.Decimal(100);
+
+export function calculateFreeQuantityPromotionAllocation(
+  requestedQuantity: number,
+  promotionStock: number,
+  buyQuantity: number,
+  freeQuantity: number,
+): FreeQuantityPromotionAllocation {
+  if (
+    requestedQuantity <= 0 ||
+    promotionStock <= 0 ||
+    buyQuantity <= 0 ||
+    freeQuantity <= 0
+  ) {
+    return { paidQuantity: 0, freeQuantity: 0 };
+  }
+
+  const bundleCount = Math.min(
+    Math.floor(requestedQuantity / buyQuantity),
+    Math.floor(promotionStock / (buyQuantity + freeQuantity)),
+  );
+
+  return {
+    paidQuantity: bundleCount * buyQuantity,
+    freeQuantity: bundleCount * freeQuantity,
+  };
+}
 
 export function calculateSalePricing(
   baseUnitPrice: Prisma.Decimal,

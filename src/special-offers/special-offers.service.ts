@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -26,7 +27,16 @@ const SPECIAL_OFFER_INCLUDE = {
   deletedByUser: {
     select: SPECIAL_OFFER_USER_SELECT,
   },
-  inventorySpecialOffers: true,
+  inventorySpecialOffers: {
+    include: {
+      inventory: {
+        select: { productId: true },
+      },
+    },
+  },
+  _count: {
+    select: { cartDetails: true },
+  },
 } satisfies Prisma.SpecialOfferInclude;
 
 type SpecialOfferPayload = Prisma.SpecialOfferGetPayload<{
@@ -54,13 +64,39 @@ export class SpecialOffersService {
   ): Promise<SpecialOfferEntity> {
     this.validateRules(dto);
 
-    const specialOffer = await this.prisma.specialOffer.create({
-      data: {
-        ...this.buildSpecialOfferData(dto),
-        createdBy: userId,
+    const specialOffer = await this.prisma.$transaction(
+      async (tx) => {
+        await this.ensureProductsAvailableForPeriod(
+          dto.productIds,
+          new Date(dto.startDateTime),
+          new Date(dto.endDateTime),
+          undefined,
+          tx,
+        );
+        const inventories = await this.findInventoriesForOffer(
+          dto.productIds,
+          dto.limitDate,
+          tx,
+        );
+
+        return tx.specialOffer.create({
+          data: {
+            ...this.buildSpecialOfferData(dto),
+            createdBy: userId,
+            inventorySpecialOffers: {
+              create: inventories.map((inventory) => ({
+                inventoryId: inventory.id,
+                limitDate: dto.limitDate ? new Date(dto.limitDate) : null,
+              })),
+            },
+          },
+          include: SPECIAL_OFFER_INCLUDE,
+        });
       },
-      include: SPECIAL_OFFER_INCLUDE,
-    });
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
 
     return this.mapSpecialOffer(specialOffer);
   }
@@ -93,21 +129,67 @@ export class SpecialOffersService {
   }
 
   async findOne(id: number): Promise<SpecialOfferEntity> {
-    return this.mapSpecialOffer(await this.findActiveOfferOrThrow(id));
+    return this.mapSpecialOffer(await this.findOfferOrThrow(id));
   }
 
   async update(
     id: number,
     dto: UpdateSpecialOfferDto,
   ): Promise<SpecialOfferEntity> {
-    await this.findActiveOfferOrThrow(id);
     this.validateRules(dto);
 
-    const specialOffer = await this.prisma.specialOffer.update({
-      where: { id },
-      data: this.buildSpecialOfferData(dto),
-      include: SPECIAL_OFFER_INCLUDE,
-    });
+    const specialOffer = await this.prisma.$transaction(
+      async (tx) => {
+        const currentOffer = await tx.specialOffer.findFirst({
+          where: { id, deletedAt: null },
+          select: {
+            id: true,
+            _count: { select: { cartDetails: true } },
+          },
+        });
+
+        if (!currentOffer) {
+          throw new NotFoundException('Offre speciale introuvable.');
+        }
+
+        if (currentOffer._count.cartDetails > 0) {
+          throw new BadRequestException(
+            'Une promotion utilisee dans une vente ne peut plus etre modifiee.',
+          );
+        }
+
+        await this.ensureProductsAvailableForPeriod(
+          dto.productIds,
+          new Date(dto.startDateTime),
+          new Date(dto.endDateTime),
+          id,
+          tx,
+        );
+        const inventories = await this.findInventoriesForOffer(
+          dto.productIds,
+          dto.limitDate,
+          tx,
+        );
+
+        return tx.specialOffer.update({
+          where: { id },
+          data: {
+            ...this.buildSpecialOfferData(dto),
+            inventorySpecialOffers: {
+              deleteMany: {},
+              create: inventories.map((inventory) => ({
+                inventoryId: inventory.id,
+                limitDate: dto.limitDate ? new Date(dto.limitDate) : null,
+              })),
+            },
+          },
+          include: SPECIAL_OFFER_INCLUDE,
+        });
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
 
     return this.mapSpecialOffer(specialOffer);
   }
@@ -129,8 +211,17 @@ export class SpecialOffersService {
     dto: AssignInventorySpecialOfferDto,
   ): Promise<InventorySpecialOfferEntity> {
     return this.prisma.$transaction(async (tx) => {
-      await this.ensureOfferExists(specialOfferId, tx);
-      await this.ensureInventoryExists(dto.inventoryId, tx);
+      const productIds = await this.findOfferProductIds(specialOfferId, tx);
+      const inventoryProductId = await this.findInventoryProductId(
+        dto.inventoryId,
+        tx,
+      );
+
+      if (!productIds.includes(inventoryProductId)) {
+        throw new BadRequestException(
+          "La ligne de stock n'appartient pas a un produit de cette promotion.",
+        );
+      }
 
       return tx.inventorySpecialOffer.upsert({
         where: {
@@ -277,31 +368,138 @@ export class SpecialOffersService {
     return specialOffer;
   }
 
-  private async ensureOfferExists(
-    id: number,
-    tx: Prisma.TransactionClient,
-  ): Promise<void> {
-    const specialOffer = await tx.specialOffer.findFirst({
-      where: { id, deletedAt: null },
-      select: { id: true },
+  private async findOfferOrThrow(id: number): Promise<SpecialOfferPayload> {
+    const specialOffer = await this.prisma.specialOffer.findUnique({
+      where: { id },
+      include: SPECIAL_OFFER_INCLUDE,
     });
 
     if (!specialOffer) {
       throw new NotFoundException('Offre speciale introuvable.');
     }
+
+    return specialOffer;
   }
 
-  private async ensureInventoryExists(
+  private async findInventoriesForOffer(
+    productIds: readonly number[],
+    limitDate: string | undefined,
+    tx: Prisma.TransactionClient,
+  ): Promise<{ id: number; productId: number }[]> {
+    const uniqueProductIds = [...new Set(productIds)];
+    const products = await tx.product.findMany({
+      where: { id: { in: uniqueProductIds }, deletedAt: null },
+      select: { id: true, name: true },
+    });
+
+    if (products.length !== uniqueProductIds.length) {
+      throw new NotFoundException(
+        'Un ou plusieurs produits sont introuvables.',
+      );
+    }
+
+    const inventories = await tx.inventory.findMany({
+      where: {
+        productId: { in: uniqueProductIds },
+        expiredAt: limitDate ? { lte: new Date(limitDate) } : undefined,
+      },
+      select: { id: true, productId: true },
+    });
+    const productIdsWithInventories = new Set(
+      inventories.map(({ productId }) => productId),
+    );
+    const productsWithoutInventory = products.filter(
+      ({ id }) => !productIdsWithInventories.has(id),
+    );
+
+    if (productsWithoutInventory.length > 0) {
+      throw new BadRequestException(
+        `Aucun lot ne correspond aux criteres pour : ${productsWithoutInventory
+          .map(({ name }) => name)
+          .join(', ')}.`,
+      );
+    }
+
+    return inventories;
+  }
+
+  private async findOfferProductIds(
     id: number,
     tx: Prisma.TransactionClient,
-  ): Promise<void> {
+  ): Promise<number[]> {
+    const specialOffer = await tx.specialOffer.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        inventorySpecialOffers: {
+          select: {
+            inventory: { select: { productId: true } },
+          },
+        },
+      },
+    });
+
+    if (!specialOffer) {
+      throw new NotFoundException('Offre speciale introuvable.');
+    }
+
+    return [
+      ...new Set(
+        specialOffer.inventorySpecialOffers.map(
+          ({ inventory }) => inventory.productId,
+        ),
+      ),
+    ];
+  }
+
+  private async findInventoryProductId(
+    id: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
     const inventory = await tx.inventory.findUnique({
       where: { id },
-      select: { id: true },
+      select: { productId: true },
     });
 
     if (!inventory) {
       throw new NotFoundException('Ligne de stock introuvable.');
+    }
+
+    return inventory.productId;
+  }
+
+  private async ensureProductsAvailableForPeriod(
+    productIds: readonly number[],
+    startDateTime: Date,
+    endDateTime: Date,
+    excludedOfferId: number | undefined,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const conflict = await tx.inventorySpecialOffer.findFirst({
+      where: {
+        inventory: {
+          productId: { in: [...new Set(productIds)] },
+        },
+        specialOffer: {
+          id: excludedOfferId ? { not: excludedOfferId } : undefined,
+          deletedAt: null,
+          startDateTime: { lt: endDateTime },
+          endDateTime: { gt: startDateTime },
+        },
+      },
+      include: {
+        inventory: {
+          select: {
+            product: { select: { name: true } },
+          },
+        },
+        specialOffer: { select: { label: true } },
+      },
+    });
+
+    if (conflict) {
+      throw new ConflictException(
+        `Le produit ${conflict.inventory.product.name} appartient deja a la promotion ${conflict.specialOffer.label} sur cette periode.`,
+      );
     }
   }
 
@@ -309,10 +507,12 @@ export class SpecialOffersService {
     query: ListSpecialOffersQueryDto,
   ): Prisma.SpecialOfferWhereInput {
     const trimmedSearch = query.search?.trim();
+    const validAt = query.validAt ? new Date(query.validAt) : undefined;
 
     return {
-      deletedAt: null,
       type: query.type,
+      startDateTime: validAt ? { lte: validAt } : undefined,
+      endDateTime: validAt ? { gte: validAt } : undefined,
       label: trimmedSearch
         ? { contains: trimmedSearch, mode: 'insensitive' }
         : undefined,
@@ -337,9 +537,25 @@ export class SpecialOffersService {
       buyQuantity: specialOffer.buyQuantity,
       freeQuantity: specialOffer.freeQuantity,
       type: specialOffer.type,
+      productIds: [
+        ...new Set(
+          specialOffer.inventorySpecialOffers.map(
+            ({ inventory }) => inventory.productId,
+          ),
+        ),
+      ],
+      limitDate: specialOffer.inventorySpecialOffers[0]?.limitDate ?? null,
+      hasSales: specialOffer._count.cartDetails > 0,
       createdByUser: specialOffer.createdByUser,
       deletedByUser: specialOffer.deletedByUser,
-      inventorySpecialOffers: specialOffer.inventorySpecialOffers,
+      inventorySpecialOffers: specialOffer.inventorySpecialOffers.map(
+        (association) => ({
+          id: association.id,
+          inventoryId: association.inventoryId,
+          specialOfferId: association.specialOfferId,
+          limitDate: association.limitDate,
+        }),
+      ),
     };
   }
 }

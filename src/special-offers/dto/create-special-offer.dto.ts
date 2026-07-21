@@ -1,6 +1,9 @@
 import { Type } from 'class-transformer';
 import { SpecialOfferType, SpecialOfferUnit } from '@prisma/client';
 import {
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
   IsDateString,
   IsEnum,
   IsInt,
@@ -13,6 +16,14 @@ import {
 } from 'class-validator';
 
 export class CreateSpecialOfferDto {
+  @IsArray({ message: 'Les produits sont invalides.' })
+  @ArrayMinSize(1, { message: 'Selectionnez au moins un produit.' })
+  @ArrayUnique({ message: "Un produit ne peut etre selectionne qu'une fois." })
+  @Type(() => Number)
+  @IsInt({ each: true, message: 'Un produit est invalide.' })
+  @Min(1, { each: true, message: 'Un produit est invalide.' })
+  productIds!: number[];
+
   @IsString()
   @IsNotEmpty({ message: "Le libelle de l'offre est obligatoire." })
   @Matches(/\S/, { message: "Le libelle de l'offre est obligatoire." })
@@ -23,6 +34,10 @@ export class CreateSpecialOfferDto {
 
   @IsDateString({}, { message: 'La date de fin est invalide.' })
   endDateTime!: string;
+
+  @IsDateString({}, { message: "La date limite d'expiration est invalide." })
+  @IsOptional()
+  limitDate?: string;
 
   @Type(() => Number)
   @IsNumber(

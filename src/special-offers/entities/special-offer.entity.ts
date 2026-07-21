@@ -23,6 +23,9 @@ export class SpecialOfferEntity {
   buyQuantity!: number | null;
   freeQuantity!: number | null;
   type!: SpecialOfferType;
+  productIds!: number[];
+  limitDate!: Date | null;
+  hasSales!: boolean;
   createdByUser?: SpecialOfferUserEntity;
   deletedByUser?: SpecialOfferUserEntity | null;
   inventorySpecialOffers?: InventorySpecialOfferEntity[];
