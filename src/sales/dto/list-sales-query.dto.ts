@@ -1,6 +1,14 @@
 import { Transform, TransformFnParams } from 'class-transformer';
 import { CartStatus, PaymentMethod } from '@prisma/client';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class ListSalesQueryDto {
   @Transform(({ value }: TransformFnParams) => Number(value))
@@ -27,4 +35,9 @@ export class ListSalesQueryDto {
   @IsEnum(PaymentMethod)
   @IsOptional()
   paymentMethod?: PaymentMethod;
+
+  @Transform(({ value }: TransformFnParams) => value === 'true')
+  @IsBoolean()
+  @IsOptional()
+  approvalQueue?: boolean;
 }

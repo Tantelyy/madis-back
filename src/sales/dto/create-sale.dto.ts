@@ -6,7 +6,6 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
-  IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
@@ -32,22 +31,21 @@ export class CreateSaleItemDto {
 
 export class CreateSaleDto {
   @IsString()
-  @IsNotEmpty({ message: 'Le nom du client est obligatoire.' })
+  @IsOptional()
   @Matches(/\S/, { message: 'Le nom du client est obligatoire.' })
-  customerName!: string;
+  customerName?: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'Le contact du client est obligatoire.' })
-  @Matches(/\S/, { message: 'Le contact du client est obligatoire.' })
-  customerContact!: string;
+  @IsOptional()
+  customerContact?: string;
 
   @IsString()
-  @IsNotEmpty({ message: "L'adresse du client est obligatoire." })
-  @Matches(/\S/, { message: "L'adresse du client est obligatoire." })
-  customerAddress!: string;
+  @IsOptional()
+  customerAddress?: string;
 
   @IsEnum(PaymentMethod, { message: 'Le mode de paiement est invalide.' })
-  paymentMethod!: PaymentMethod;
+  @IsOptional()
+  paymentMethod?: PaymentMethod;
 
   @IsArray({ message: 'Les produits de la vente sont invalides.' })
   @ArrayMinSize(1, { message: 'La vente doit contenir au moins un produit.' })

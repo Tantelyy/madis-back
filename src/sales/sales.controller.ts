@@ -6,8 +6,10 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { SALES_ACCESS_REQUIREMENTS } from '../auth/constants/sales-access.constants';
 import { RequireAccess } from '../auth/decorators/access.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -16,6 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CartEntity } from '../carts/entities/cart.entity';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { GenerateInvoiceDto } from './dto/generate-invoice.dto';
 import { ListSaleCatalogQueryDto } from './dto/list-sale-catalog-query.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import { PaySaleDto } from './dto/pay-sale.dto';
@@ -74,10 +77,26 @@ export class SalesController {
   @RequireAccess({ roles: ['ADMIN'], permissions: ['ALL'] })
   validate(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: PaySaleDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CartEntity> {
-    return this.salesService.validate(id, dto.paymentMethod, user);
+    return this.salesService.validate(id, user);
+  }
+
+  @Post(':id/invoice')
+  async generateInvoice(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: GenerateInvoiceDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() response: Response,
+  ): Promise<void> {
+    const invoice = await this.salesService.generateInvoice(id, dto, user);
+
+    response.setHeader('Content-Type', 'application/pdf');
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="facture-${id}.pdf"`,
+    );
+    response.send(invoice);
   }
 
   @Post(':id/refund')

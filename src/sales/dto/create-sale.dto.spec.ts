@@ -30,11 +30,19 @@ describe('CreateSaleDto', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('refuse une vente sans moyen de paiement', async () => {
+  it('accepte une demande de validation sans moyen de paiement', async () => {
     const errors = await validate(createSaleDto(null));
 
-    expect(errors.some((error) => error.property === 'paymentMethod')).toBe(
-      true,
-    );
+    expect(errors).toHaveLength(0);
+  });
+
+  it('accepte un contact et une adresse vides lorsqu une facture est demandee', async () => {
+    const dto = createSaleDto();
+    dto.customerContact = '';
+    dto.customerAddress = '';
+
+    const errors = await validate(dto);
+
+    expect(errors).toHaveLength(0);
   });
 });

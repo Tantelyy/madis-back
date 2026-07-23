@@ -16,9 +16,9 @@ export class CartEntity {
   status!: CartStatus;
   validatedBy!: number | null;
   totalPrice!: string;
-  customerName!: string;
-  customerContact!: string;
-  customerAddress!: string;
+  customerName!: string | null;
+  customerContact!: string | null;
+  customerAddress!: string | null;
   paymentMethod!: PaymentMethod | null;
   reason!: string | null;
   seller?: CartUserEntity;
