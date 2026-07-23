@@ -1,6 +1,5 @@
 export interface InvoiceLine {
   productName: string;
-  reference: string;
   quantity: number;
   freeQuantity: number;
   unitPrice: string;
@@ -47,6 +46,21 @@ function formatInvoiceDate(value: Date): string {
     timeStyle: 'short',
     timeZone: 'Indian/Antananarivo',
   }).format(value);
+}
+
+function formatInvoiceAmount(value: string): string {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return value;
+  }
+
+  return new Intl.NumberFormat('fr-FR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
+    .format(amount)
+    .replace(/[\u00a0\u202f]/g, ' ');
 }
 
 function addText(
@@ -156,11 +170,11 @@ export function generateInvoicePdf(invoice: InvoiceData): Buffer {
       startPage(false);
     }
 
-    const label = `${line.productName} (${line.reference})`.slice(0, 48);
+    const label = line.productName.slice(0, 48);
     addText(commands, label, LEFT_MARGIN, y);
     addText(commands, String(line.quantity), 350, y);
-    addText(commands, `${line.unitPrice} Ar`, 405, y);
-    addText(commands, `${line.totalPrice} Ar`, 490, y);
+    addText(commands, `${formatInvoiceAmount(line.unitPrice)} Ar`, 405, y);
+    addText(commands, `${formatInvoiceAmount(line.totalPrice)} Ar`, 490, y);
     y -= 17;
     if (line.freeQuantity > 0) {
       addText(
@@ -180,7 +194,13 @@ export function generateInvoicePdf(invoice: InvoiceData): Buffer {
 
   commands.push(`${LEFT_MARGIN} ${y} m 547 ${y} l S`);
   y -= 28;
-  addText(commands, `TOTAL : ${invoice.totalPrice} Ar`, 390, y, 14);
+  addText(
+    commands,
+    `TOTAL : ${formatInvoiceAmount(invoice.totalPrice)} Ar`,
+    390,
+    y,
+    14,
+  );
   y -= 24;
   addText(
     commands,

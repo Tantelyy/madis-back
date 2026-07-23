@@ -14,7 +14,6 @@ function createInvoice(lineCount: number): InvoiceData {
     totalPrice: '12000.00',
     lines: Array.from({ length: lineCount }, (_, index) => ({
       productName: `Produit ${index + 1}`,
-      reference: `REF-${index + 1}`,
       quantity: 1,
       freeQuantity: 0,
       unitPrice: '1000.00',
@@ -32,6 +31,8 @@ describe('generateInvoicePdf', () => {
     expect(content).toContain('FACTURE N° 42');
     expect(content).toContain('juillet 2026 à');
     expect(content).toContain('Espèces');
+    expect(content).toContain('1 000 Ar');
+    expect(content).toContain('TOTAL : 12 000 Ar');
     expect(content).toContain('Statut : Annulée');
     expect(content).toContain('Raison : Erreur de commande');
     expect(content).toContain('%%EOF');

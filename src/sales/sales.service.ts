@@ -381,7 +381,6 @@ export class SalesService {
       totalPrice: sale.totalPrice.toFixed(2),
       lines: sale.cartDetails.map((detail) => ({
         productName: detail.inventory.product.name,
-        reference: detail.inventory.product.reference,
         quantity: detail.quantity,
         freeQuantity: detail.freeQuantity ?? 0,
         unitPrice: detail.finalUnitPrice.toFixed(2),
