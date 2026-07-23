@@ -14,6 +14,7 @@ import { CartEntity } from '../carts/entities/cart.entity';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSaleDto, CreateSaleItemDto } from './dto/create-sale.dto';
+import { GenerateInvoiceDto } from './dto/generate-invoice.dto';
 import { ListSaleCatalogQueryDto } from './dto/list-sale-catalog-query.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import { SaleCatalogProductEntity } from './entities/sale-catalog-product.entity';
@@ -26,6 +27,7 @@ import {
 } from './utils/promotion-calculator.util';
 import { selectLatestInventory } from './utils/latest-inventory.util';
 import { getRestrictedSellerId } from './utils/sale-access.util';
+import { generateInvoicePdf, type InvoiceData } from './utils/invoice-pdf.util';
 
 const SALE_USER_SELECT = {
   id: true,
@@ -145,9 +147,9 @@ export class SalesService {
           status,
           validatedBy: requiresValidation ? null : user.id,
           totalPrice: totalPrice.toFixed(2),
-          customerName: dto.customerName.trim(),
-          customerContact: dto.customerContact.trim(),
-          customerAddress: dto.customerAddress.trim(),
+          customerName: dto.customerName?.trim() || null,
+          customerContact: dto.customerContact?.trim() || null,
+          customerAddress: dto.customerAddress?.trim() || null,
           paymentMethod: dto.paymentMethod,
           cartDetails: {
             create: preparedItems.map((item) => ({
@@ -284,18 +286,13 @@ export class SalesService {
     });
   }
 
-  async validate(
-    id: number,
-    paymentMethod: PaymentMethod,
-    admin: AuthenticatedUser,
-  ): Promise<CartEntity> {
+  async validate(id: number, admin: AuthenticatedUser): Promise<CartEntity> {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.cart.updateMany({
         where: { id, status: CartStatus.PENDING },
         data: {
-          status: CartStatus.PAID,
+          status: CartStatus.VALIDATED,
           validatedBy: admin.id,
-          paymentMethod,
         },
       });
 
@@ -310,6 +307,83 @@ export class SalesService {
 
       return this.findSaleInTransaction(id, tx);
     });
+  }
+
+  async generateInvoice(
+    id: number,
+    dto: GenerateInvoiceDto,
+    user: AuthenticatedUser,
+  ): Promise<Buffer> {
+    const sale = await this.prisma.cart.findFirst({
+      where: this.buildAccessibleSaleWhere(id, user),
+      include: SALE_INCLUDE,
+    });
+
+    if (!sale) {
+      throw new NotFoundException('Vente introuvable.');
+    }
+
+    if (
+      sale.status !== CartStatus.VALIDATED &&
+      sale.status !== CartStatus.PAID
+    ) {
+      throw new BadRequestException(
+        'Une facture ne peut être générée que pour une vente validée ou payée.',
+      );
+    }
+
+    const customerName = dto.customerName?.trim() || sale.customerName?.trim();
+
+    if (!customerName) {
+      throw new BadRequestException(
+        'Le nom du client est obligatoire pour générer une facture.',
+      );
+    }
+
+    const customerContact =
+      dto.customerContact === undefined
+        ? sale.customerContact
+        : dto.customerContact.trim() || null;
+    const customerAddress =
+      dto.customerAddress === undefined
+        ? sale.customerAddress
+        : dto.customerAddress.trim() || null;
+
+    if (
+      customerName !== sale.customerName ||
+      customerContact !== sale.customerContact ||
+      customerAddress !== sale.customerAddress
+    ) {
+      await this.prisma.cart.update({
+        where: { id },
+        data: {
+          customerName,
+          customerContact,
+          customerAddress,
+        },
+      });
+    }
+
+    const invoice: InvoiceData = {
+      saleId: sale.id,
+      createdAt: sale.createdAt,
+      customerName,
+      customerContact,
+      customerAddress,
+      sellerName: sale.seller.userName,
+      paymentMethod: sale.paymentMethod,
+      totalPrice: sale.totalPrice.toFixed(2),
+      lines: sale.cartDetails.map((detail) => ({
+        productName: detail.inventory.product.name,
+        reference: detail.inventory.product.reference,
+        quantity: detail.quantity,
+        freeQuantity: detail.freeQuantity ?? 0,
+        unitPrice: detail.finalUnitPrice.toFixed(2),
+        totalPrice: detail.finalUnitPrice.mul(detail.quantity).toFixed(2),
+      })),
+    };
+
+    return generateInvoicePdf(invoice);
   }
 
   async refund(
@@ -921,8 +995,17 @@ export class SalesService {
 
     return {
       soldBy: getRestrictedSellerId(user),
-      status: query.status,
+      status: query.approvalQueue
+        ? { in: [CartStatus.PENDING, CartStatus.VALIDATED] }
+        : query.status,
       paymentMethod: query.paymentMethod,
+      cartDetails: query.approvalQueue
+        ? {
+            some: {
+              wholesale: true,
+            },
+          }
+        : undefined,
       OR: trimmedSearch
         ? [
             {

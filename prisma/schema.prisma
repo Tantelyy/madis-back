@@ -282,9 +282,9 @@ model Cart {
   status             CartStatus          @default(VALIDATED)
   validatedBy        Int?
   totalPrice         Decimal             @db.Decimal(12, 2)
-  customerName       String
-  customerContact    String
-  customerAddress    String
+  customerName       String?
+  customerContact    String?
+  customerAddress    String?
   paymentMethod      PaymentMethod?
   reason             String?
   seller             User                @relation("CartSoldBy", fields: [soldBy], references: [id])

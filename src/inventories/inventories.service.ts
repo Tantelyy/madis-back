@@ -15,6 +15,7 @@ import {
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { InventoryMovementEntity } from './entities/inventory-movement.entity';
 import { InventoryEntity } from './entities/inventory.entity';
+import { InventoryFormOptions } from './interfaces/inventory-form-options.interface';
 import { PaginatedInventoryMovements } from './interfaces/paginated-inventory-movements.interface';
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
 
@@ -143,6 +144,30 @@ export class InventoriesService {
         totalPages: Math.ceil(total / query.limit),
       },
     };
+  }
+
+  async findFormOptions(): Promise<InventoryFormOptions> {
+    const [products, suppliers] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          reference: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.supplier.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    return { products, suppliers };
   }
 
   async findAllMovements(

@@ -21,6 +21,7 @@ import {
 } from './dto/list-inventories-query.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { PaginatedInventoryMovements } from './interfaces/paginated-inventory-movements.interface';
+import { InventoryFormOptions } from './interfaces/inventory-form-options.interface';
 import { InventoryEntity } from './entities/inventory.entity';
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
 import { InventoriesService } from './inventories.service';
@@ -47,6 +48,11 @@ export class InventoriesController {
     @Query() query: ListInventoriesQueryDto,
   ): Promise<PaginatedInventories> {
     return this.inventoriesService.findAll(query);
+  }
+
+  @Get('form-options')
+  findFormOptions(): Promise<InventoryFormOptions> {
+    return this.inventoriesService.findFormOptions();
   }
 
   @Get('movements')
