@@ -9,6 +9,8 @@ function createInvoice(lineCount: number): InvoiceData {
     customerAddress: null,
     sellerName: 'Vendeur',
     paymentMethod: 'CASH',
+    status: 'CANCELLED',
+    reason: 'Erreur de commande',
     totalPrice: '12000.00',
     lines: Array.from({ length: lineCount }, (_, index) => ({
       productName: `Produit ${index + 1}`,
@@ -30,6 +32,8 @@ describe('generateInvoicePdf', () => {
     expect(content).toContain('FACTURE N° 42');
     expect(content).toContain('juillet 2026 à');
     expect(content).toContain('Espèces');
+    expect(content).toContain('Statut : Annulée');
+    expect(content).toContain('Raison : Erreur de commande');
     expect(content).toContain('%%EOF');
   });
 

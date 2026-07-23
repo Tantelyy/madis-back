@@ -15,6 +15,8 @@ export interface InvoiceData {
   customerAddress: string | null;
   sellerName: string;
   paymentMethod: string | null;
+  status: string;
+  reason: string | null;
   totalPrice: string;
   lines: InvoiceLine[];
 }
@@ -172,7 +174,7 @@ export function generateInvoicePdf(invoice: InvoiceData): Buffer {
     }
   });
 
-  if (y < 100) {
+  if (y < 150) {
     startPage(false);
   }
 
@@ -186,6 +188,12 @@ export function generateInvoicePdf(invoice: InvoiceData): Buffer {
     365,
     y,
   );
+  y -= 20;
+  addText(commands, `Statut : ${formatInvoiceStatus(invoice.status)}`, 365, y);
+  if (invoice.reason) {
+    y -= 20;
+    addText(commands, `Raison : ${invoice.reason.slice(0, 34)}`, 365, y);
+  }
   pages.forEach((page, index) => {
     addText(page, `Page ${index + 1}/${pages.length}`, 490, 45, 9);
     addText(page, 'Merci pour votre confiance.', LEFT_MARGIN, 45, 10);
@@ -203,4 +211,15 @@ function formatPaymentMethod(paymentMethod: string | null): string {
   };
 
   return paymentMethod ? (labels[paymentMethod] ?? paymentMethod) : 'Non payée';
+}
+
+function formatInvoiceStatus(status: string): string {
+  const labels: Readonly<Record<string, string>> = {
+    VALIDATED: 'Validée',
+    PAID: 'Payée',
+    REFUNDED: 'Remboursée',
+    CANCELLED: 'Annulée',
+  };
+
+  return labels[status] ?? status;
 }

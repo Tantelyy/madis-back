@@ -77,6 +77,13 @@ const SALE_CATALOG_PRODUCT_INCLUDE = {
   },
 } satisfies Prisma.ProductInclude;
 
+const INVOICE_STATUSES: readonly CartStatus[] = [
+  CartStatus.VALIDATED,
+  CartStatus.PAID,
+  CartStatus.REFUNDED,
+  CartStatus.CANCELLED,
+];
+
 type SalePayload = Prisma.CartGetPayload<{
   include: typeof SALE_INCLUDE;
 }>;
@@ -323,12 +330,9 @@ export class SalesService {
       throw new NotFoundException('Vente introuvable.');
     }
 
-    if (
-      sale.status !== CartStatus.VALIDATED &&
-      sale.status !== CartStatus.PAID
-    ) {
+    if (!INVOICE_STATUSES.includes(sale.status)) {
       throw new BadRequestException(
-        'Une facture ne peut être générée que pour une vente validée ou payée.',
+        'Une facture ne peut pas être générée pour cette vente.',
       );
     }
 
@@ -372,6 +376,8 @@ export class SalesService {
       customerAddress,
       sellerName: sale.seller.userName,
       paymentMethod: sale.paymentMethod,
+      status: sale.status,
+      reason: sale.reason,
       totalPrice: sale.totalPrice.toFixed(2),
       lines: sale.cartDetails.map((detail) => ({
         productName: detail.inventory.product.name,
