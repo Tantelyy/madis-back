@@ -259,6 +259,17 @@ async function seed(): Promise<void> {
       },
     });
 
+    const stockManagerRole = await prisma.role.upsert({
+      where: { label: 'STOCK_MANAGER' },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'STOCK_MANAGER',
+      },
+    });
+
     const canSellPermission = await prisma.permission.upsert({
       where: { code: 'CAN_SELL' },
       update: {
@@ -376,6 +387,23 @@ async function seed(): Promise<void> {
       },
     });
 
+    const canViewStockPermission = await prisma.permission.upsert({
+      where: { code: 'CAN_VIEW_STOCK' },
+      update: {
+        label: 'Consulter l’état du stock',
+        descriptions:
+          'Permet de consulter et d’exporter l’état du stock par produit et par lot.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Consulter l’état du stock',
+        code: 'CAN_VIEW_STOCK',
+        descriptions:
+          'Permet de consulter et d’exporter l’état du stock par produit et par lot.',
+      },
+    });
+
     await prisma.rolePermission.upsert({
       where: {
         roleId_permissionId: {
@@ -407,6 +435,23 @@ async function seed(): Promise<void> {
       create: {
         roleId: adminRole.id,
         permissionId: allPermission.id,
+      },
+    });
+
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: stockManagerRole.id,
+          permissionId: canViewStockPermission.id,
+        },
+      },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        roleId: stockManagerRole.id,
+        permissionId: canViewStockPermission.id,
       },
     });
 

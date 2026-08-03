@@ -235,7 +235,7 @@ export class ProductsService {
     });
 
     if (!specification) {
-      throw new NotFoundException('Specification de produit introuvable.');
+      throw new NotFoundException('Spécification de produit introuvable.');
     }
 
     return specification;

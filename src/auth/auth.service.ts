@@ -121,7 +121,7 @@ export class AuthService {
     const userPermissionCodes = user.userPermissions.map(
       (userPermission) => userPermission.permission.code,
     );
-    const rolePermissionCodes = user.role.rolePermissions.map(
+    const rolePermissionCodes = (user.role.rolePermissions ?? []).map(
       (rolePermission) => rolePermission.permission.code,
     );
 

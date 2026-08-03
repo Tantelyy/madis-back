@@ -17,19 +17,19 @@ import {
 
 export class CreateSpecialOfferDto {
   @IsArray({ message: 'Les produits sont invalides.' })
-  @ArrayMinSize(1, { message: 'Selectionnez au moins un produit.' })
-  @ArrayUnique({ message: "Un produit ne peut etre selectionne qu'une fois." })
+  @ArrayMinSize(1, { message: 'Sélectionnez au moins un produit.' })
+  @ArrayUnique({ message: "Un produit ne peut être sélectionné qu'une fois." })
   @Type(() => Number)
   @IsInt({ each: true, message: 'Un produit est invalide.' })
   @Min(1, { each: true, message: 'Un produit est invalide.' })
   productIds!: number[];
 
   @IsString()
-  @IsNotEmpty({ message: "Le libelle de l'offre est obligatoire." })
-  @Matches(/\S/, { message: "Le libelle de l'offre est obligatoire." })
+  @IsNotEmpty({ message: "Le libellé de l'offre est obligatoire." })
+  @Matches(/\S/, { message: "Le libellé de l'offre est obligatoire." })
   label!: string;
 
-  @IsDateString({}, { message: 'La date de debut est invalide.' })
+  @IsDateString({}, { message: 'La date de début est invalide.' })
   startDateTime!: string;
 
   @IsDateString({}, { message: 'La date de fin est invalide.' })
@@ -44,23 +44,23 @@ export class CreateSpecialOfferDto {
     { maxDecimalPlaces: 2 },
     { message: "La valeur de l'offre est invalide." },
   )
-  @Min(0, { message: "La valeur de l'offre doit etre positive." })
+  @Min(0, { message: "La valeur de l'offre doit être positive." })
   @IsOptional()
   value?: number;
 
-  @IsEnum(SpecialOfferUnit, { message: "L'unite de l'offre est invalide." })
+  @IsEnum(SpecialOfferUnit, { message: "L'unité de l'offre est invalide." })
   @IsOptional()
   unit?: SpecialOfferUnit;
 
   @Type(() => Number)
-  @IsInt({ message: "La quantite d'achat est invalide." })
-  @Min(1, { message: "La quantite d'achat doit etre superieure a 0." })
+  @IsInt({ message: "La quantité d'achat est invalide." })
+  @Min(1, { message: "La quantité d'achat doit être supérieure à 0." })
   @IsOptional()
   buyQuantity?: number;
 
   @Type(() => Number)
-  @IsInt({ message: 'La quantite gratuite est invalide.' })
-  @Min(1, { message: 'La quantite gratuite doit etre superieure a 0.' })
+  @IsInt({ message: 'La quantité gratuite est invalide.' })
+  @Min(1, { message: 'La quantité gratuite doit être supérieure à 0.' })
   @IsOptional()
   freeQuantity?: number;
 

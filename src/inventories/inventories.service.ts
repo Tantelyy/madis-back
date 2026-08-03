@@ -13,11 +13,18 @@ import {
   ListInventoryMovementsQueryDto,
 } from './dto/list-inventories-query.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
+import {
+  ListStockSummaryQueryDto,
+  type StockSummarySortField,
+  type StockSummarySortOrder,
+} from './dto/list-stock-summary-query.dto';
 import { InventoryMovementEntity } from './entities/inventory-movement.entity';
 import { InventoryEntity } from './entities/inventory.entity';
 import { InventoryFormOptions } from './interfaces/inventory-form-options.interface';
 import { PaginatedInventoryMovements } from './interfaces/paginated-inventory-movements.interface';
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
+import { PaginatedStockSummary } from './interfaces/paginated-stock-summary.interface';
+import type { StockSummaryEntity } from './entities/stock-summary.entity';
 
 const INVENTORY_USER_SELECT = {
   id: true,
@@ -146,6 +153,84 @@ export class InventoriesService {
     };
   }
 
+  async findStockSummary(
+    query: ListStockSummaryQueryDto,
+  ): Promise<PaginatedStockSummary> {
+    const trimmedSearch = query.search?.trim();
+    const products = await this.prisma.product.findMany({
+      where: {
+        deletedAt: null,
+        OR: trimmedSearch
+          ? [
+              { name: { contains: trimmedSearch, mode: 'insensitive' } },
+              { reference: { contains: trimmedSearch, mode: 'insensitive' } },
+            ]
+          : undefined,
+      },
+      select: {
+        id: true,
+        name: true,
+        reference: true,
+        inventories: {
+          select: {
+            id: true,
+            expiredAt: true,
+            remainingQuantity: true,
+          },
+          orderBy: [{ expiredAt: 'asc' }, { id: 'asc' }],
+        },
+      },
+    });
+    const summaries = products.map<StockSummaryEntity>((product) => ({
+      productId: product.id,
+      name: product.name,
+      reference: product.reference,
+      remainingQuantity: product.inventories.reduce(
+        (total, inventory) => total + inventory.remainingQuantity,
+        0,
+      ),
+      lots: product.inventories.map((inventory) => ({
+        id: inventory.id,
+        expiredAt: inventory.expiredAt,
+        remainingQuantity: inventory.remainingQuantity,
+      })),
+    }));
+
+    summaries.sort((first, second) =>
+      this.compareStockSummaries(first, second, query.sortBy, query.order),
+    );
+
+    const total = summaries.length;
+    const skip = (query.page - 1) * query.limit;
+
+    return {
+      data: summaries.slice(skip, skip + query.limit),
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
+  }
+
+  private compareStockSummaries(
+    first: StockSummaryEntity,
+    second: StockSummaryEntity,
+    sortBy: StockSummarySortField,
+    order: StockSummarySortOrder,
+  ): number {
+    const direction = order === 'asc' ? 1 : -1;
+    const comparison =
+      sortBy === 'remainingQuantity'
+        ? first.remainingQuantity - second.remainingQuantity
+        : first[sortBy].localeCompare(second[sortBy], 'fr', {
+            sensitivity: 'base',
+          });
+
+    return comparison * direction;
+  }
+
   async findFormOptions(): Promise<InventoryFormOptions> {
     const [products, suppliers] = await this.prisma.$transaction([
       this.prisma.product.findMany({
@@ -210,7 +295,7 @@ export class InventoriesService {
 
       if (remainingQuantity < 0) {
         throw new BadRequestException(
-          'La quantite restante ne peut pas etre negative.',
+          'La quantité restante ne peut pas être négative.',
         );
       }
 

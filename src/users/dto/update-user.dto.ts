@@ -20,12 +20,12 @@ export class UpdateUserDto {
 
   @IsString()
   @MinLength(8, {
-    message: 'Le mot de passe doit contenir au moins 8 caracteres',
+    message: 'Le mot de passe doit contenir au moins 8 caractères',
   })
   @IsOptional()
   password?: string;
 
-  @IsIn(USER_ROLES, { message: 'Le role selectionne est invalide' })
+  @IsIn(USER_ROLES, { message: 'Le rôle sélectionné est invalide' })
   @IsOptional()
   role?: UserRole;
 

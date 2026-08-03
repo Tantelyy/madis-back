@@ -20,10 +20,12 @@ import {
   ListInventoryMovementsQueryDto,
 } from './dto/list-inventories-query.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
+import { ListStockSummaryQueryDto } from './dto/list-stock-summary-query.dto';
 import { PaginatedInventoryMovements } from './interfaces/paginated-inventory-movements.interface';
 import { InventoryFormOptions } from './interfaces/inventory-form-options.interface';
 import { InventoryEntity } from './entities/inventory.entity';
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
+import { PaginatedStockSummary } from './interfaces/paginated-stock-summary.interface';
 import { InventoriesService } from './inventories.service';
 
 @Controller('inventories')
@@ -48,6 +50,17 @@ export class InventoriesController {
     @Query() query: ListInventoriesQueryDto,
   ): Promise<PaginatedInventories> {
     return this.inventoriesService.findAll(query);
+  }
+
+  @Get('stock-summary')
+  @RequireAccess({
+    roles: ['ADMIN', 'STOCK_MANAGER'],
+    permissions: ['ALL', 'CAN_VIEW_STOCK', 'CAN_MANAGE_ACCOUNTS'],
+  })
+  findStockSummary(
+    @Query() query: ListStockSummaryQueryDto,
+  ): Promise<PaginatedStockSummary> {
+    return this.inventoriesService.findStockSummary(query);
   }
 
   @Get('form-options')
