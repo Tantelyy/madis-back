@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthTokenPayload } from '../interfaces/auth-token-payload.interface';
 import { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
+import { assertRoleDeviceAccess } from '../utils/device-access.util';
 
 const ACCESS_TOKEN_COOKIE_NAME = 'accessToken';
 
@@ -62,6 +63,8 @@ export class JwtAuthGuard implements CanActivate {
     if (!user) {
       throw new UnauthorizedException('Utilisateur introuvable ou inactif.');
     }
+
+    assertRoleDeviceAccess(user.role.label, request.headers);
 
     request.user = {
       id: user.id,
