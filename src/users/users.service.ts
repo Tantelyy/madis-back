@@ -99,10 +99,7 @@ export class UsersService {
     return this.toUserEntity(await this.findActiveUserOrThrow(id));
   }
 
-  async update(
-    id: number,
-    updateUserDto: UpdateUserDto,
-  ): Promise<UserEntity> {
+  async update(id: number, updateUserDto: UpdateUserDto): Promise<UserEntity> {
     const currentUser = await this.findActiveUserOrThrow(id);
     const email = updateUserDto.email?.trim().toLowerCase();
     const role = updateUserDto.role
@@ -154,7 +151,7 @@ export class UsersService {
   async remove(id: number, currentUserId: number): Promise<void> {
     if (id === currentUserId) {
       throw new BadRequestException(
-        'Vous ne pouvez pas desactiver votre propre compte.',
+        'Vous ne pouvez pas désactiver votre propre compte.',
       );
     }
 
@@ -198,7 +195,7 @@ export class UsersService {
     });
 
     if (existingUser && existingUser.id !== ignoredUserId) {
-      throw new ConflictException('Cette adresse email est deja utilisee.');
+      throw new ConflictException('Cette adresse email est déjà utilisée.');
     }
   }
 
@@ -214,7 +211,7 @@ export class UsersService {
     });
 
     if (!role) {
-      throw new BadRequestException('Le role selectionne est introuvable.');
+      throw new BadRequestException('Le rôle sélectionné est introuvable.');
     }
 
     return role;
@@ -237,7 +234,7 @@ export class UsersService {
 
     if (permissions.length !== uniqueCodes.length) {
       throw new BadRequestException(
-        'Une ou plusieurs permissions selectionnees sont invalides.',
+        'Une ou plusieurs permissions sélectionnées sont invalides.',
       );
     }
 

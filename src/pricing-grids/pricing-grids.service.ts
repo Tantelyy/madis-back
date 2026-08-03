@@ -99,13 +99,13 @@ export class PricingGridsService {
     sortedPricingRules.forEach((pricingRule, index) => {
       if (pricingRule.maxPurchasePrice < pricingRule.minPurchasePrice) {
         throw new BadRequestException(
-          'Chaque prix maximum doit etre superieur ou egal au prix minimum.',
+          'Chaque prix maximum doit être supérieur ou égal au prix minimum.',
         );
       }
 
       if (index === 0 && pricingRule.minPurchasePrice !== 0) {
         throw new BadRequestException(
-          'La premiere tranche doit commencer au prix 0.',
+          'La première tranche doit commencer au prix 0.',
         );
       }
 

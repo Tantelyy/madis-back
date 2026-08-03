@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   CartStatus,
   InventoryMovementType,
@@ -121,7 +122,10 @@ interface ActiveProductPromotion {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async create(
     dto: CreateSaleDto,
@@ -157,6 +161,8 @@ export class SalesService {
           customerName: dto.customerName?.trim() || null,
           customerContact: dto.customerContact?.trim() || null,
           customerAddress: dto.customerAddress?.trim() || null,
+          customerNif: dto.customerNif?.trim() || null,
+          customerStat: dto.customerStat?.trim() || null,
           paymentMethod: dto.paymentMethod,
           cartDetails: {
             create: preparedItems.map((item) => ({
@@ -352,11 +358,21 @@ export class SalesService {
       dto.customerAddress === undefined
         ? sale.customerAddress
         : dto.customerAddress.trim() || null;
+    const customerNif =
+      dto.customerNif === undefined
+        ? sale.customerNif
+        : dto.customerNif.trim() || null;
+    const customerStat =
+      dto.customerStat === undefined
+        ? sale.customerStat
+        : dto.customerStat.trim() || null;
 
     if (
       customerName !== sale.customerName ||
       customerContact !== sale.customerContact ||
-      customerAddress !== sale.customerAddress
+      customerAddress !== sale.customerAddress ||
+      customerNif !== sale.customerNif ||
+      customerStat !== sale.customerStat
     ) {
       await this.prisma.cart.update({
         where: { id },
@@ -364,6 +380,8 @@ export class SalesService {
           customerName,
           customerContact,
           customerAddress,
+          customerNif,
+          customerStat,
         },
       });
     }
@@ -374,6 +392,22 @@ export class SalesService {
       customerName,
       customerContact,
       customerAddress,
+      customerNif,
+      customerStat,
+      company: {
+        nif: this.configService.get<string>(
+          'MADIS_NIF',
+          'NIF MADIS À RENSEIGNER',
+        ),
+        stat: this.configService.get<string>(
+          'MADIS_STAT',
+          'STAT MADIS À RENSEIGNER',
+        ),
+        logoPath: this.configService.get<string>(
+          'MADIS_LOGO_PATH',
+          'assets/madis-logo.png',
+        ),
+      },
       sellerName: sale.seller.userName,
       paymentMethod: sale.paymentMethod,
       status: sale.status,
@@ -914,7 +948,7 @@ export class SalesService {
 
     if (productIds.size !== items.length) {
       throw new ConflictException(
-        "Un produit ne peut apparaitre qu'une fois dans une vente.",
+        "Un produit ne peut apparaître qu'une fois dans une vente.",
       );
     }
   }
@@ -1060,6 +1094,8 @@ export class SalesService {
       customerName: sale.customerName,
       customerContact: sale.customerContact,
       customerAddress: sale.customerAddress,
+      customerNif: sale.customerNif,
+      customerStat: sale.customerStat,
       paymentMethod: sale.paymentMethod,
       reason: sale.reason,
       seller: sale.seller,

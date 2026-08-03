@@ -15,8 +15,8 @@ export class UpdateInventoryDto {
   productId?: number;
 
   @Type(() => Number)
-  @IsInt({ message: 'La quantite est invalide' })
-  @Min(0, { message: 'La quantite doit etre positive' })
+  @IsInt({ message: 'La quantité est invalide' })
+  @Min(0, { message: 'La quantité doit être positive' })
   @IsOptional()
   quantity?: number;
 
@@ -25,7 +25,7 @@ export class UpdateInventoryDto {
     { maxDecimalPlaces: 2 },
     { message: "Le prix d'achat est invalide" },
   )
-  @Min(0, { message: "Le prix d'achat doit etre positif" })
+  @Min(0, { message: "Le prix d'achat doit être positif" })
   @IsOptional()
   purchasePrice?: number;
 
@@ -34,7 +34,7 @@ export class UpdateInventoryDto {
     { maxDecimalPlaces: 2 },
     { message: 'Le prix de vente est invalide' },
   )
-  @Min(0, { message: 'Le prix de vente doit etre positif' })
+  @Min(0, { message: 'Le prix de vente doit être positif' })
   @IsOptional()
   salePrice?: number;
 
@@ -43,7 +43,7 @@ export class UpdateInventoryDto {
     { maxDecimalPlaces: 2 },
     { message: 'Le prix de vente en gros est invalide' },
   )
-  @Min(0, { message: 'Le prix de vente en gros doit etre positif' })
+  @Min(0, { message: 'Le prix de vente en gros doit être positif' })
   @IsOptional()
   wholesalePrice?: number;
 

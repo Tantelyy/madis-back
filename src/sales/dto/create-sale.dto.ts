@@ -20,8 +20,8 @@ export class CreateSaleItemDto {
   productId!: number;
 
   @Type(() => Number)
-  @IsInt({ message: 'La quantite est invalide.' })
-  @Min(1, { message: 'La quantite doit etre superieure a 0.' })
+  @IsInt({ message: 'La quantité est invalide.' })
+  @Min(1, { message: 'La quantité doit être supérieure à 0.' })
   quantity!: number;
 
   @IsBoolean({ message: 'Le type de prix est invalide.' })
@@ -42,6 +42,14 @@ export class CreateSaleDto {
   @IsString()
   @IsOptional()
   customerAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  customerNif?: string;
+
+  @IsString()
+  @IsOptional()
+  customerStat?: string;
 
   @IsEnum(PaymentMethod, { message: 'Le mode de paiement est invalide.' })
   @IsOptional()

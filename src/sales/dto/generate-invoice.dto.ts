@@ -13,4 +13,12 @@ export class GenerateInvoiceDto {
   @IsString()
   @IsOptional()
   customerAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  customerNif?: string;
+
+  @IsString()
+  @IsOptional()
+  customerStat?: string;
 }

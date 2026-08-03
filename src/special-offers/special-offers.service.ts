@@ -166,12 +166,12 @@ export class SpecialOffersService {
         });
 
         if (!currentOffer) {
-          throw new NotFoundException('Offre speciale introuvable.');
+          throw new NotFoundException('Offre spéciale introuvable.');
         }
 
         if (currentOffer._count.cartDetails > 0) {
           throw new BadRequestException(
-            'Une promotion utilisee dans une vente ne peut plus etre modifiee.',
+            'Une promotion utilisée dans une vente ne peut plus être modifiée.',
           );
         }
 
@@ -236,7 +236,7 @@ export class SpecialOffersService {
 
       if (!productIds.includes(inventoryProductId)) {
         throw new BadRequestException(
-          "La ligne de stock n'appartient pas a un produit de cette promotion.",
+          "La ligne de stock n'appartient pas à un produit de cette promotion.",
         );
       }
 
@@ -275,7 +275,7 @@ export class SpecialOffersService {
 
     if (!association) {
       throw new NotFoundException(
-        "Cette offre n'est pas associee a la ligne de stock.",
+        "Cette offre n'est pas associée à la ligne de stock.",
       );
     }
 
@@ -290,7 +290,7 @@ export class SpecialOffersService {
 
     if (endDateTime <= startDateTime) {
       throw new BadRequestException(
-        'La date de fin doit etre posterieure a la date de debut.',
+        'La date de fin doit être postérieure à la date de début.',
       );
     }
 
@@ -305,25 +305,25 @@ export class SpecialOffersService {
   private validateReduction(dto: CreateSpecialOfferDto): void {
     if (!this.isDefined(dto.value) || !this.isDefined(dto.unit)) {
       throw new BadRequestException(
-        'Une reduction doit definir une valeur et une unite.',
+        'Une réduction doit définir une valeur et une unité.',
       );
     }
 
     if (dto.value <= 0) {
       throw new BadRequestException(
-        "La valeur d'une reduction doit etre superieure a 0.",
+        "La valeur d'une réduction doit être supérieure à 0.",
       );
     }
 
     if (dto.unit === SpecialOfferUnit.PERCENT && dto.value > 100) {
       throw new BadRequestException(
-        'Une reduction en pourcentage ne peut pas depasser 100%.',
+        'Une réduction en pourcentage ne peut pas dépasser 100%.',
       );
     }
 
     if (this.isDefined(dto.buyQuantity) || this.isDefined(dto.freeQuantity)) {
       throw new BadRequestException(
-        'Une reduction ne doit pas definir de quantites achetee ou gratuite.',
+        'Une réduction ne doit pas définir de quantités achetées ou gratuites.',
       );
     }
   }
@@ -331,13 +331,13 @@ export class SpecialOffersService {
   private validateFreeQuantityOffer(dto: CreateSpecialOfferDto): void {
     if (!this.isDefined(dto.buyQuantity) || !this.isDefined(dto.freeQuantity)) {
       throw new BadRequestException(
-        'Une offre BUY_X_GET_N doit definir les quantites achetee et gratuite.',
+        'Une offre BUY_X_GET_N doit définir la quantité achetée et la quantité gratuite.',
       );
     }
 
     if (this.isDefined(dto.value) || this.isDefined(dto.unit)) {
       throw new BadRequestException(
-        "Une offre BUY_X_GET_N ne doit pas definir de valeur ni d'unite.",
+        "Une offre BUY_X_GET_N ne doit pas définir de valeur ni d'unité.",
       );
     }
   }
@@ -379,7 +379,7 @@ export class SpecialOffersService {
     });
 
     if (!specialOffer) {
-      throw new NotFoundException('Offre speciale introuvable.');
+      throw new NotFoundException('Offre spéciale introuvable.');
     }
 
     return specialOffer;
@@ -392,7 +392,7 @@ export class SpecialOffersService {
     });
 
     if (!specialOffer) {
-      throw new NotFoundException('Offre speciale introuvable.');
+      throw new NotFoundException('Offre spéciale introuvable.');
     }
 
     return specialOffer;
@@ -431,7 +431,7 @@ export class SpecialOffersService {
 
     if (productsWithoutInventory.length > 0) {
       throw new BadRequestException(
-        `Aucun lot ne correspond aux criteres pour : ${productsWithoutInventory
+        `Aucun lot ne correspond aux critères pour : ${productsWithoutInventory
           .map(({ name }) => name)
           .join(', ')}.`,
       );
@@ -456,7 +456,7 @@ export class SpecialOffersService {
     });
 
     if (!specialOffer) {
-      throw new NotFoundException('Offre speciale introuvable.');
+      throw new NotFoundException('Offre spéciale introuvable.');
     }
 
     return [
@@ -515,7 +515,7 @@ export class SpecialOffersService {
 
     if (conflict) {
       throw new ConflictException(
-        `Le produit ${conflict.inventory.product.name} appartient deja a la promotion ${conflict.specialOffer.label} sur cette periode.`,
+        `Le produit ${conflict.inventory.product.name} appartient déjà à la promotion ${conflict.specialOffer.label} sur cette période.`,
       );
     }
   }

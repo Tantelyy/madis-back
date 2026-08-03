@@ -1,10 +1,11 @@
-import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { CookieOptions, Response } from 'express';
+import type { CookieOptions, Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import type { AuthTokens } from './interfaces/auth-tokens.interface';
 import type { LoginResponse } from './interfaces/login-response.interface';
+import { assertRoleDeviceAccess } from './utils/device-access.util';
 
 const ACCESS_TOKEN_COOKIE_NAME = 'accessToken';
 const REFRESH_TOKEN_COOKIE_NAME = 'refreshToken';
@@ -19,9 +20,11 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() loginDto: LoginDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<LoginResponse> {
     const session = await this.authService.login(loginDto);
+    assertRoleDeviceAccess(session.user.role, request.headers);
     this.setAuthCookies(response, session.tokens);
 
     return {

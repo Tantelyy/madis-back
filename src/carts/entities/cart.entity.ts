@@ -19,6 +19,8 @@ export class CartEntity {
   customerName!: string | null;
   customerContact!: string | null;
   customerAddress!: string | null;
+  customerNif!: string | null;
+  customerStat!: string | null;
   paymentMethod!: PaymentMethod | null;
   reason!: string | null;
   seller?: CartUserEntity;

@@ -32,7 +32,7 @@ export class ListSpecialOffersQueryDto {
   @IsOptional()
   type?: SpecialOfferType;
 
-  @IsDateString({}, { message: 'La date de validite est invalide.' })
+  @IsDateString({}, { message: 'La date de validité est invalide.' })
   @IsOptional()
   validAt?: string;
 }

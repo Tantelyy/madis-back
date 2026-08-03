@@ -285,6 +285,8 @@ model Cart {
   customerName       String?
   customerContact    String?
   customerAddress    String?
+  customerNif        String?
+  customerStat       String?
   paymentMethod      PaymentMethod?
   reason             String?
   seller             User                @relation("CartSoldBy", fields: [soldBy], references: [id])
