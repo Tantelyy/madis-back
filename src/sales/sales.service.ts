@@ -395,17 +395,22 @@ export class SalesService {
       customerNif,
       customerStat,
       company: {
-        nif: this.configService.get<string>(
-          'MADIS_NIF',
-          'NIF MADIS À RENSEIGNER',
+        address: this.configService.get<string>(
+          'MADIS_ADDRESS',
+          'AVARATRANTANIMORA',
         ),
+        nif: this.configService.get<string>('MADIS_NIF', '4019 20 33 95'),
         stat: this.configService.get<string>(
           'MADIS_STAT',
-          'STAT MADIS À RENSEIGNER',
+          '46900 11 2025 0 03 535',
+        ),
+        slogan: this.configService.get<string>(
+          'MADIS_SLOGAN',
+          'SMART CHOICE, BETTER LIFE',
         ),
         logoPath: this.configService.get<string>(
           'MADIS_LOGO_PATH',
-          'assets/madis-logo.png',
+          'assets/logo.png',
         ),
       },
       sellerName: sale.seller.userName,
