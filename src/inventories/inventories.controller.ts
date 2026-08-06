@@ -7,8 +7,11 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RequireAccess } from '../auth/decorators/access.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AccessGuard } from '../auth/guards/access.guard';
@@ -27,6 +30,12 @@ import { InventoryEntity } from './entities/inventory.entity';
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
 import { PaginatedStockSummary } from './interfaces/paginated-stock-summary.interface';
 import { InventoriesService } from './inventories.service';
+import { InventoryImportService } from './inventory-import.service';
+import {
+  INVENTORY_CSV_MAX_FILE_SIZE,
+  type InventoryImportSummary,
+  type UploadedInventoryCsvFile,
+} from './interfaces/inventory-import.interface';
 
 @Controller('inventories')
 @UseGuards(JwtAuthGuard, AccessGuard)
@@ -35,7 +44,10 @@ import { InventoriesService } from './inventories.service';
   permissions: ['CAN_INVENTORY', 'ALL'],
 })
 export class InventoriesController {
-  constructor(private readonly inventoriesService: InventoriesService) {}
+  constructor(
+    private readonly inventoriesService: InventoriesService,
+    private readonly inventoryImportService: InventoryImportService,
+  ) {}
 
   @Post()
   create(
@@ -43,6 +55,19 @@ export class InventoriesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<InventoryEntity> {
     return this.inventoriesService.create(createInventoryDto, user.id);
+  }
+
+  @Post('import')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: INVENTORY_CSV_MAX_FILE_SIZE, files: 1 },
+    }),
+  )
+  importCsv(
+    @UploadedFile() file: UploadedInventoryCsvFile | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<InventoryImportSummary> {
+    return this.inventoryImportService.importCsv(file, user.id);
   }
 
   @Get()
