@@ -23,6 +23,7 @@ import { ProductSpecificationEntity } from './entities/product-specification.ent
 import { ProductTypeEntity } from './entities/product-type.entity';
 import { ProductEntity } from './entities/product.entity';
 import { PaginatedProducts } from './interfaces/paginated-products.interface';
+import { composeProductName } from './utils/product-name.util';
 
 const PRODUCT_USER_SELECT = {
   id: true,
@@ -52,10 +53,6 @@ const PRODUCT_NAME_INCLUDE = {
   format: true,
   productType: true,
 } satisfies Prisma.ProductInclude;
-
-type ProductNamePayload = Prisma.ProductGetPayload<{
-  include: typeof PRODUCT_NAME_INCLUDE;
-}>;
 
 type ProductReferenceField =
   | 'markId'
@@ -436,26 +433,12 @@ export class ProductsService {
       this.findTypeForProduct(productDto.productTypeId),
     ]);
 
-    return this.composeProductName({
-      mark,
-      specification,
-      format,
-      productType,
+    return composeProductName({
+      type: productType.type,
+      specification: specification.specification,
+      mark: mark.name,
+      format: format.format,
     });
-  }
-
-  private composeProductName(
-    product: Pick<
-      ProductNamePayload,
-      'mark' | 'specification' | 'format' | 'productType'
-    >,
-  ): string {
-    return [
-      product.productType.type,
-      product.mark.name,
-      product.specification.specification,
-      product.format.format,
-    ].join(' ');
   }
 
   private async refreshProductNamesByReference(
@@ -473,7 +456,12 @@ export class ProductsService {
         tx.product.update({
           where: { id: product.id },
           data: {
-            name: this.composeProductName(product),
+            name: composeProductName({
+              type: product.productType.type,
+              specification: product.specification.specification,
+              mark: product.mark.name,
+              format: product.format.format,
+            }),
           },
         }),
       ),

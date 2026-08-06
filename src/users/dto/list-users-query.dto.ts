@@ -1,7 +1,12 @@
 import { Transform, TransformFnParams } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export const USER_SORT_FIELDS = ['userName', 'email', 'createdAt', 'updatedAt'] as const;
+export const USER_SORT_FIELDS = [
+  'userName',
+  'email',
+  'createdAt',
+  'updatedAt',
+] as const;
 export const SORT_ORDERS = ['asc', 'desc'] as const;
 
 export type UserSortField = (typeof USER_SORT_FIELDS)[number];

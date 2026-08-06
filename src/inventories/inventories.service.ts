@@ -25,6 +25,8 @@ import { PaginatedInventoryMovements } from './interfaces/paginated-inventory-mo
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
 import { PaginatedStockSummary } from './interfaces/paginated-stock-summary.interface';
 import type { StockSummaryEntity } from './entities/stock-summary.entity';
+import { InventoryPricingService } from './inventory-pricing.service';
+import { buildIncomingInventoryData } from './utils/inventory-write.util';
 
 const INVENTORY_USER_SELECT = {
   id: true,
@@ -69,20 +71,12 @@ type InventoryMovementPayload = Prisma.InventoryMovementGetPayload<{
   include: typeof INVENTORY_MOVEMENT_INCLUDE;
 }>;
 
-interface InventoryPrices {
-  purchasePrice: string;
-  salePrice: string;
-  wholesalePrice: string;
-}
-
-interface PricingRuleMargins {
-  retailAverage: Prisma.Decimal;
-  wholesaleAverage: Prisma.Decimal;
-}
-
 @Injectable()
 export class InventoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inventoryPricingService: InventoryPricingService,
+  ) {}
 
   async create(
     createInventoryDto: CreateInventoryDto,
@@ -92,7 +86,7 @@ export class InventoriesService {
       await this.ensureProductExists(createInventoryDto.productId, tx);
       await this.ensureSupplierExists(createInventoryDto.supplierId, tx);
 
-      const prices = await this.resolvePrices(
+      const prices = await this.inventoryPricingService.resolvePrices(
         createInventoryDto.purchasePrice,
         createInventoryDto.salePrice,
         createInventoryDto.wholesalePrice,
@@ -100,26 +94,16 @@ export class InventoriesService {
       );
 
       const inventory = await tx.inventory.create({
-        data: {
+        data: buildIncomingInventoryData({
           productId: createInventoryDto.productId,
           quantity: createInventoryDto.quantity,
-          remainingQuantity: createInventoryDto.quantity,
-          createdBy: userId,
+          actorId: userId,
           supplierId: createInventoryDto.supplierId,
           expiredAt: createInventoryDto.expiredAt
             ? new Date(createInventoryDto.expiredAt)
             : null,
           ...prices,
-          inventoryMovements: {
-            create: {
-              incomingQuantity: createInventoryDto.quantity,
-              outgoingQuantity: 0,
-              actorId: userId,
-              type: InventoryMovementType.INCOMING,
-              ...prices,
-            },
-          },
-        },
+        }),
         include: INVENTORY_INCLUDE,
       });
 
@@ -308,7 +292,7 @@ export class InventoriesService {
               wholesalePrice: inventory.wholesalePrice.toNumber(),
             }
           : undefined;
-      const prices = await this.resolvePrices(
+      const prices = await this.inventoryPricingService.resolvePrices(
         purchasePrice,
         updateInventoryDto.salePrice,
         updateInventoryDto.wholesalePrice,
@@ -409,87 +393,6 @@ export class InventoriesService {
     }
   }
 
-  private async resolvePrices(
-    purchasePrice: number,
-    salePrice: number | undefined,
-    wholesalePrice: number | undefined,
-    tx: Prisma.TransactionClient,
-    fallbackPrices?: {
-      salePrice: number;
-      wholesalePrice: number;
-    },
-  ): Promise<InventoryPrices> {
-    if (salePrice !== undefined && wholesalePrice !== undefined) {
-      return {
-        purchasePrice: this.toDecimalPriceString(purchasePrice),
-        salePrice: this.toRoundedPriceString(salePrice),
-        wholesalePrice: this.toRoundedPriceString(wholesalePrice),
-      };
-    }
-
-    if (
-      fallbackPrices &&
-      salePrice === undefined &&
-      wholesalePrice === undefined
-    ) {
-      return {
-        purchasePrice: this.toDecimalPriceString(purchasePrice),
-        salePrice: this.toRoundedPriceString(fallbackPrices.salePrice),
-        wholesalePrice: this.toRoundedPriceString(
-          fallbackPrices.wholesalePrice,
-        ),
-      };
-    }
-
-    const pricingRule = await this.findPricingRuleForPurchasePrice(
-      purchasePrice,
-      tx,
-    );
-
-    return {
-      purchasePrice: this.toDecimalPriceString(purchasePrice),
-      salePrice: this.toRoundedPriceString(
-        salePrice ?? purchasePrice + pricingRule.retailAverage.toNumber(),
-      ),
-      wholesalePrice: this.toRoundedPriceString(
-        wholesalePrice ??
-          purchasePrice + pricingRule.wholesaleAverage.toNumber(),
-      ),
-    };
-  }
-
-  private async findPricingRuleForPurchasePrice(
-    purchasePrice: number,
-    tx: Prisma.TransactionClient,
-  ): Promise<PricingRuleMargins> {
-    const pricingRule = await tx.pricingRule.findFirst({
-      where: {
-        minPurchasePrice: { lte: purchasePrice },
-        maxPurchasePrice: { gte: purchasePrice },
-        pricingGrid: {
-          status: 'ACTIVE',
-          effectiveFrom: { lte: new Date() },
-          OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date() } }],
-        },
-      },
-      select: {
-        retailAverage: true,
-        wholesaleAverage: true,
-      },
-      orderBy: {
-        minPurchasePrice: 'desc',
-      },
-    });
-
-    if (!pricingRule) {
-      throw new NotFoundException(
-        "Aucune tranche de marge active ne correspond au prix d'achat.",
-      );
-    }
-
-    return pricingRule;
-  }
-
   private buildListWhere(search?: string): Prisma.InventoryWhereInput {
     const trimmedSearch = search?.trim();
 
@@ -587,14 +490,6 @@ export class InventoriesService {
       default:
         return { createdAt: order };
     }
-  }
-
-  private toDecimalPriceString(value: number): string {
-    return value.toFixed(2);
-  }
-
-  private toRoundedPriceString(value: number): string {
-    return Math.round(value).toFixed(2);
   }
 
   private async findMovements(
