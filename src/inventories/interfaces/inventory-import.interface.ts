@@ -1,11 +1,5 @@
-export const INVENTORY_CSV_MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-export interface UploadedInventoryCsvFile {
-  originalname: string;
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-}
+export { CSV_MAX_FILE_SIZE as INVENTORY_CSV_MAX_FILE_SIZE } from '../../common/interfaces/uploaded-csv-file.interface';
+export type { UploadedCsvFile as UploadedInventoryCsvFile } from '../../common/interfaces/uploaded-csv-file.interface';
 
 export interface InventoryImportSummary {
   rowsProcessed: number;

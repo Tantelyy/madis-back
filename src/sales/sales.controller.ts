@@ -7,8 +7,11 @@ import {
   Post,
   Query,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { SALES_ACCESS_REQUIREMENTS } from '../auth/constants/sales-access.constants';
 import { RequireAccess } from '../auth/decorators/access.decorator';
@@ -26,12 +29,21 @@ import { SaleReversalDto } from './dto/sale-reversal.dto';
 import { PaginatedSales } from './interfaces/paginated-sales.interface';
 import { PaginatedSaleCatalog } from './interfaces/paginated-sale-catalog.interface';
 import { SalesService } from './sales.service';
+import { SaleImportService } from './sale-import.service';
+import {
+  SALE_CSV_MAX_FILE_SIZE,
+  type SaleImportSummary,
+  type UploadedSaleCsvFile,
+} from './interfaces/sale-import.interface';
 
 @Controller('sales')
 @UseGuards(JwtAuthGuard, AccessGuard)
 @RequireAccess(SALES_ACCESS_REQUIREMENTS)
 export class SalesController {
-  constructor(private readonly salesService: SalesService) {}
+  constructor(
+    private readonly salesService: SalesService,
+    private readonly saleImportService: SaleImportService,
+  ) {}
 
   @Post()
   create(
@@ -39,6 +51,19 @@ export class SalesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CartEntity> {
     return this.salesService.create(dto, user);
+  }
+
+  @Post('import')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: SALE_CSV_MAX_FILE_SIZE, files: 1 },
+    }),
+  )
+  importCsv(
+    @UploadedFile() file: UploadedSaleCsvFile | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<SaleImportSummary> {
+    return this.saleImportService.importCsv(file, user.id);
   }
 
   @Get('catalog')

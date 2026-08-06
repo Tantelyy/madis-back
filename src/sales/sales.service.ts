@@ -29,6 +29,7 @@ import {
 import { selectLatestInventory } from './utils/latest-inventory.util';
 import { getRestrictedSellerId } from './utils/sale-access.util';
 import { generateInvoicePdf, type InvoiceData } from './utils/invoice-pdf.util';
+import { recordSaleStockOutput } from './utils/sale-stock-output.util';
 
 const SALE_USER_SELECT = {
   id: true,
@@ -964,34 +965,14 @@ export class SalesService {
     cartId: number,
     userId: number,
   ): Promise<void> {
-    const updated = await tx.inventory.updateMany({
-      where: {
-        id: item.inventory.id,
-        remainingQuantity: { gte: item.pricing.stockQuantity },
-      },
-      data: {
-        remainingQuantity: { decrement: item.pricing.stockQuantity },
-      },
-    });
-
-    if (updated.count === 0) {
-      throw new ConflictException(
-        `Le stock disponible est insuffisant pour la ligne ${item.inventory.id}.`,
-      );
-    }
-
-    await tx.inventoryMovement.create({
-      data: {
-        inventoryId: item.inventory.id,
-        incomingQuantity: 0,
-        outgoingQuantity: item.pricing.stockQuantity,
-        actorId: userId,
-        type: InventoryMovementType.SALE,
-        purchasePrice: item.inventory.purchasePrice,
-        salePrice: item.currentPrices.retailPrice,
-        wholesalePrice: item.currentPrices.wholesalePrice,
-        cartId,
-      },
+    await recordSaleStockOutput(tx, {
+      inventoryId: item.inventory.id,
+      quantity: item.pricing.stockQuantity,
+      actorId: userId,
+      cartId,
+      purchasePrice: item.inventory.purchasePrice,
+      salePrice: item.currentPrices.retailPrice,
+      wholesalePrice: item.currentPrices.wholesalePrice,
     });
   }
 
