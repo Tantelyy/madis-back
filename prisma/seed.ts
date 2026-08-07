@@ -353,7 +353,7 @@ async function seed(): Promise<void> {
       },
     });
 
-    await prisma.permission.upsert({
+    const canInventoryPermission = await prisma.permission.upsert({
       where: { code: 'CAN_INVENTORY' },
       update: {
         label: 'Gérer le stock',
@@ -452,6 +452,23 @@ async function seed(): Promise<void> {
       create: {
         roleId: stockManagerRole.id,
         permissionId: canViewStockPermission.id,
+      },
+    });
+
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: stockManagerRole.id,
+          permissionId: canInventoryPermission.id,
+        },
+      },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        roleId: stockManagerRole.id,
+        permissionId: canInventoryPermission.id,
       },
     });
 

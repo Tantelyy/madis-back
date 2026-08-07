@@ -40,7 +40,7 @@ import {
 @Controller('inventories')
 @UseGuards(JwtAuthGuard, AccessGuard)
 @RequireAccess({
-  roles: ['ADMIN'],
+  roles: ['ADMIN', 'STOCK_MANAGER'],
   permissions: ['CAN_INVENTORY', 'ALL'],
 })
 export class InventoriesController {
