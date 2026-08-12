@@ -9,8 +9,9 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { DateRangeQueryDto } from '../../common/dto/date-range-query.dto';
 
-export class ListSalesQueryDto {
+export class ListSalesQueryDto extends DateRangeQueryDto {
   @Transform(({ value }: TransformFnParams) => Number(value))
   @IsInt()
   @Min(1)

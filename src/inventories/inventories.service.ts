@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InventoryMovementType, Prisma } from '@prisma/client';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInventoryDto } from './dto/create-inventory.dto';
 import {
@@ -112,7 +113,7 @@ export class InventoriesService {
   }
 
   async findAll(query: ListInventoriesQueryDto): Promise<PaginatedInventories> {
-    const where = this.buildListWhere(query.search);
+    const where = this.buildListWhere(query);
     const skip = (query.page - 1) * query.limit;
     const orderBy = this.buildOrderBy(query.sortBy, query.order);
     const [data, total] = await this.prisma.$transaction([
@@ -393,14 +394,20 @@ export class InventoriesService {
     }
   }
 
-  private buildListWhere(search?: string): Prisma.InventoryWhereInput {
-    const trimmedSearch = search?.trim();
+  private buildListWhere(
+    query: ListInventoriesQueryDto,
+  ): Prisma.InventoryWhereInput {
+    const trimmedSearch = query.search?.trim();
+    const where: Prisma.InventoryWhereInput = {
+      createdAt: buildDateRangeFilter(query),
+    };
 
     if (!trimmedSearch) {
-      return {};
+      return where;
     }
 
     return {
+      ...where,
       OR: [
         { product: { name: { contains: trimmedSearch, mode: 'insensitive' } } },
         {
@@ -422,6 +429,7 @@ export class InventoriesService {
     const where: Prisma.InventoryMovementWhereInput = {
       inventoryId: inventoryId ?? query.inventoryId,
       type: query.type,
+      createdAt: buildDateRangeFilter(query),
     };
     const trimmedSearch = query.search?.trim();
 
