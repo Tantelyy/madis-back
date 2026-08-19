@@ -1,11 +1,17 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { CartStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProfitabilityQueryDto } from './dto/profitability-query.dto';
+import { SalesStockQueryDto } from './dto/sales-stock-query.dto';
 import type {
   ProfitabilityAmounts,
   ProfitabilityStatistics,
 } from './interfaces/profitability.interface';
+import type {
+  SalesStockAnalysis,
+  SalesStockItem,
+} from './interfaces/sales-stock.interface';
+import { parseDashboardPeriod } from './utils/dashboard-period.util';
 import {
   buildProfitabilityBuckets,
   findBucketIndex,
@@ -27,14 +33,7 @@ export class DashboardService {
   async getProfitability(
     query: ProfitabilityQueryDto,
   ): Promise<ProfitabilityStatistics> {
-    const from = new Date(query.from);
-    const to = new Date(query.to);
-
-    if (from >= to) {
-      throw new BadRequestException(
-        'La date de fin doit être postérieure à la date de début.',
-      );
-    }
+    const { from, to } = parseDashboardPeriod(query);
 
     const granularity = resolveProfitabilityGranularity(
       from,
@@ -148,6 +147,108 @@ export class DashboardService {
       },
       totals: this.toResponseAmounts(totals),
       points,
+    };
+  }
+
+  async getSalesStockAnalysis(
+    query: SalesStockQueryDto,
+  ): Promise<SalesStockAnalysis> {
+    const { from, to } = parseDashboardPeriod(query);
+    const productWhere: Prisma.ProductWhereInput = {
+      deletedAt: null,
+      productTypeId: query.productTypeId,
+    };
+    const [products, salesByInventory] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where: productWhere,
+        select: {
+          id: true,
+          name: true,
+          productTypeId: true,
+          productType: { select: { type: true } },
+          inventories: {
+            select: { id: true, remainingQuantity: true },
+          },
+        },
+      }),
+      this.prisma.cartDetail.groupBy({
+        by: ['inventoryId'],
+        orderBy: { inventoryId: 'asc' },
+        where: {
+          cart: {
+            status: CartStatus.PAID,
+            createdAt: { gte: from, lt: to },
+          },
+          inventory: { product: productWhere },
+        },
+        _sum: { quantity: true },
+      }),
+    ]);
+    const productIdByInventoryId = new Map<number, number>();
+
+    for (const product of products) {
+      for (const inventory of product.inventories) {
+        productIdByInventoryId.set(inventory.id, product.id);
+      }
+    }
+
+    const soldQuantityByProductId = new Map<number, number>();
+
+    for (const sale of salesByInventory) {
+      const productId = productIdByInventoryId.get(sale.inventoryId);
+
+      if (productId !== undefined) {
+        soldQuantityByProductId.set(
+          productId,
+          (soldQuantityByProductId.get(productId) ?? 0) +
+            (sale._sum?.quantity ?? 0),
+        );
+      }
+    }
+
+    const items = products.map<SalesStockItem>((product) => ({
+      productId: product.id,
+      productName: product.name,
+      productTypeId: product.productTypeId,
+      productType: product.productType.type,
+      soldQuantity: soldQuantityByProductId.get(product.id) ?? 0,
+      currentStock: product.inventories.reduce(
+        (total, inventory) => total + inventory.remainingQuantity,
+        0,
+      ),
+    }));
+
+    items.sort(
+      (first, second) =>
+        second.soldQuantity - first.soldQuantity ||
+        first.productName.localeCompare(second.productName, 'fr', {
+          sensitivity: 'base',
+        }) ||
+        first.productId - second.productId,
+    );
+
+    const total = items.length;
+    const skip = (query.page - 1) * query.limit;
+    const maximumQuantity = items.reduce(
+      (maximum, item) =>
+        Math.max(maximum, item.soldQuantity, item.currentStock),
+      1,
+    );
+
+    return {
+      period: {
+        from: from.toISOString(),
+        to: to.toISOString(),
+      },
+      stockAsOf: new Date().toISOString(),
+      maximumQuantity,
+      data: items.slice(skip, skip + query.limit),
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+      },
     };
   }
 
