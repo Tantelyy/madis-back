@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { CartEntity } from '../carts/entities/cart.entity';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { buildDateRangeFilter } from '../common/utils/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSaleDto, CreateSaleItemDto } from './dto/create-sale.dto';
 import { GenerateInvoiceDto } from './dto/generate-invoice.dto';
@@ -1020,6 +1021,7 @@ export class SalesService {
 
     return {
       soldBy: getRestrictedSellerId(user),
+      createdAt: buildDateRangeFilter(query),
       status: query.approvalQueue
         ? { in: [CartStatus.PENDING, CartStatus.VALIDATED] }
         : query.status,

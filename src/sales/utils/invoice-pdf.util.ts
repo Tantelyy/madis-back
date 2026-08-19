@@ -36,6 +36,10 @@ export interface InvoiceData {
 }
 
 const PAGE_MARGIN = 48;
+const INVOICE_LOGO_TOP = 32;
+const INVOICE_LOGO_SIZE = 70;
+const INVOICE_BRAND_TEXT_LEFT = 128;
+const INVOICE_BRAND_TEXT_WIDTH = 180;
 const TABLE_COLUMNS = {
   product: PAGE_MARGIN,
   quantity: 350,
@@ -140,17 +144,29 @@ function drawPageHeader(
   includeCustomer: boolean,
 ): number {
   if (includeCustomer) {
-    drawLogo(document, invoice.company.logoPath, PAGE_MARGIN, 32, 70);
+    drawLogo(
+      document,
+      invoice.company.logoPath,
+      PAGE_MARGIN,
+      INVOICE_LOGO_TOP,
+      INVOICE_LOGO_SIZE,
+    );
     document
       .fillColor('#0f172a')
       .font('Helvetica-Bold')
       .fontSize(17)
-      .text('MA DISTRIBUTION', 128, 40, { width: 180 });
+      .text('MA DISTRIBUTION', INVOICE_BRAND_TEXT_LEFT, 50, {
+        width: INVOICE_BRAND_TEXT_WIDTH,
+        align: 'center',
+      });
     document
       .font('Helvetica')
       .fontSize(8)
       .fillColor('#475569')
-      .text(invoice.company.slogan, 128, 64, { width: 180 });
+      .text(invoice.company.slogan, INVOICE_BRAND_TEXT_LEFT, 74, {
+        width: INVOICE_BRAND_TEXT_WIDTH,
+        align: 'center',
+      });
     document
       .fillColor('#0f172a')
       .fontSize(9)

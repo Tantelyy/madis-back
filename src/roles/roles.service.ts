@@ -30,7 +30,7 @@ export class RolesService {
       where: {
         deletedAt: null,
         label: {
-          in: ['ADMIN', 'SELLER'],
+          in: ['ADMIN', 'SELLER', 'STOCK_MANAGER'],
         },
       },
       include: ROLE_INCLUDE,

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { InventoriesModule } from './inventories/inventories.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PricingGridsModule } from './pricing-grids/pricing-grids.module';
@@ -20,6 +21,7 @@ import { UsersModule } from './users/users.module';
       isGlobal: true,
     }),
     AuthModule,
+    DashboardModule,
     PrismaModule,
     UsersModule,
     RolesModule,
