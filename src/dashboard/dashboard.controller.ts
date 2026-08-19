@@ -7,6 +7,7 @@ import { ProfitabilityQueryDto } from './dto/profitability-query.dto';
 import { SalesStockQueryDto } from './dto/sales-stock-query.dto';
 import type { ProfitabilityStatistics } from './interfaces/profitability.interface';
 import type { SalesStockAnalysis } from './interfaces/sales-stock.interface';
+import type { StockFinancialValue } from './interfaces/stock-value.interface';
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, AccessGuard)
@@ -26,5 +27,10 @@ export class DashboardController {
     @Query() query: SalesStockQueryDto,
   ): Promise<SalesStockAnalysis> {
     return this.dashboardService.getSalesStockAnalysis(query);
+  }
+
+  @Get('stock-value')
+  getStockFinancialValue(): Promise<StockFinancialValue> {
+    return this.dashboardService.getStockFinancialValue();
   }
 }

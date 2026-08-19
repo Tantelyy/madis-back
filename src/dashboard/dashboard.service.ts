@@ -11,6 +11,10 @@ import type {
   SalesStockAnalysis,
   SalesStockItem,
 } from './interfaces/sales-stock.interface';
+import type {
+  StockFinancialValue,
+  StockValueByProductType,
+} from './interfaces/stock-value.interface';
 import { parseDashboardPeriod } from './utils/dashboard-period.util';
 import {
   buildProfitabilityBuckets,
@@ -22,6 +26,12 @@ interface MutableProfitabilityAmounts {
   purchaseAmount: Prisma.Decimal;
   revenue: Prisma.Decimal;
   costOfGoodsSold: Prisma.Decimal;
+}
+
+interface MutableStockValueByProductType {
+  productTypeId: number;
+  productType: string;
+  value: Prisma.Decimal;
 }
 
 const ZERO = new Prisma.Decimal(0);
@@ -249,6 +259,79 @@ export class DashboardService {
         limit: query.limit,
         totalPages: Math.ceil(total / query.limit),
       },
+    };
+  }
+
+  async getStockFinancialValue(): Promise<StockFinancialValue> {
+    const inventories = await this.prisma.inventory.findMany({
+      where: {
+        remainingQuantity: { gt: 0 },
+        product: { deletedAt: null },
+      },
+      select: {
+        remainingQuantity: true,
+        purchasePrice: true,
+        product: {
+          select: {
+            productType: {
+              select: { id: true, type: true },
+            },
+          },
+        },
+      },
+    });
+    const valuesByProductType = new Map<
+      number,
+      MutableStockValueByProductType
+    >();
+
+    for (const inventory of inventories) {
+      const productType = inventory.product.productType;
+      const currentValue = valuesByProductType.get(productType.id);
+      const inventoryValue = inventory.purchasePrice.mul(
+        inventory.remainingQuantity,
+      );
+
+      if (currentValue) {
+        currentValue.value = currentValue.value.plus(inventoryValue);
+      } else {
+        valuesByProductType.set(productType.id, {
+          productTypeId: productType.id,
+          productType: productType.type,
+          value: inventoryValue,
+        });
+      }
+    }
+
+    const values = [...valuesByProductType.values()].sort(
+      (first, second) =>
+        second.value.comparedTo(first.value) ||
+        first.productType.localeCompare(second.productType, 'fr', {
+          sensitivity: 'base',
+        }) ||
+        first.productTypeId - second.productTypeId,
+    );
+    const totalValue = values.reduce(
+      (total, item) => total.plus(item.value),
+      new Prisma.Decimal(0),
+    );
+    const byProductType = values.map<StockValueByProductType>((item) => ({
+      productTypeId: item.productTypeId,
+      productType: item.productType,
+      value: item.value.toDecimalPlaces(2).toFixed(2),
+      percentage: totalValue.equals(ZERO)
+        ? '0.00'
+        : item.value
+            .dividedBy(totalValue)
+            .times(100)
+            .toDecimalPlaces(2)
+            .toFixed(2),
+    }));
+
+    return {
+      stockAsOf: new Date().toISOString(),
+      totalValue: totalValue.toDecimalPlaces(2).toFixed(2),
+      byProductType,
     };
   }
 

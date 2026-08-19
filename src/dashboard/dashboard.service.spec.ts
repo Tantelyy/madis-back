@@ -149,4 +149,64 @@ describe('DashboardService', () => {
       }),
     );
   });
+
+  it('values the current stock at each inventory purchase price', async () => {
+    const inventoryFindMany = jest.fn().mockResolvedValue([
+      {
+        remainingQuantity: 4,
+        purchasePrice: new Prisma.Decimal(100),
+        product: { productType: { id: 1, type: 'Boisson' } },
+      },
+      {
+        remainingQuantity: 3,
+        purchasePrice: new Prisma.Decimal(200),
+        product: { productType: { id: 2, type: 'Alimentaire' } },
+      },
+      {
+        remainingQuantity: 2,
+        purchasePrice: new Prisma.Decimal(150),
+        product: { productType: { id: 1, type: 'Boisson' } },
+      },
+    ]);
+    const prisma = {
+      inventory: { findMany: inventoryFindMany },
+    } as unknown as PrismaService;
+    const service = new DashboardService(prisma);
+
+    const result = await service.getStockFinancialValue();
+
+    expect(result.totalValue).toBe('1300.00');
+    expect(result.byProductType).toEqual([
+      {
+        productTypeId: 1,
+        productType: 'Boisson',
+        value: '700.00',
+        percentage: '53.85',
+      },
+      {
+        productTypeId: 2,
+        productType: 'Alimentaire',
+        value: '600.00',
+        percentage: '46.15',
+      },
+    ]);
+    expect(result.stockAsOf).toEqual(expect.any(String));
+    expect(inventoryFindMany).toHaveBeenCalledWith({
+      where: {
+        remainingQuantity: { gt: 0 },
+        product: { deletedAt: null },
+      },
+      select: {
+        remainingQuantity: true,
+        purchasePrice: true,
+        product: {
+          select: {
+            productType: {
+              select: { id: true, type: true },
+            },
+          },
+        },
+      },
+    });
+  });
 });
