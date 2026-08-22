@@ -75,6 +75,8 @@ function formatPaymentMethod(paymentMethod: string | null): string {
     MVOLA: 'MVola',
     AIRTEL_MONEY: 'Airtel Money',
     ORANGE_MONEY: 'Orange Money',
+    CHECK: 'Chèque',
+    BANK_TRANSFER: 'Virement bancaire',
   };
 
   return paymentMethod ? (labels[paymentMethod] ?? paymentMethod) : 'Non payée';

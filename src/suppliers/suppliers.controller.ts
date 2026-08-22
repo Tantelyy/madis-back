@@ -33,6 +33,10 @@ export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
   @Post()
+  @RequireAccess({
+    roles: ['ADMIN', 'STOCK_MANAGER'],
+    permissions: ['CAN_INVENTORY', 'CAN_SUPPLIERS', 'CAN_SUPPLIER', 'ALL'],
+  })
   create(
     @Body() createSupplierDto: CreateSupplierDto,
     @CurrentUser() user: AuthenticatedUser,

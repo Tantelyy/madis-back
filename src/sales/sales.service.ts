@@ -31,6 +31,11 @@ import { selectLatestInventory } from './utils/latest-inventory.util';
 import { getRestrictedSellerId } from './utils/sale-access.util';
 import { generateInvoicePdf, type InvoiceData } from './utils/invoice-pdf.util';
 import { recordSaleStockOutput } from './utils/sale-stock-output.util';
+import { buildInsufficientStockMessage } from './utils/stock-message.util';
+import {
+  isManualWholesaleRequest,
+  usesWholesalePrice,
+} from './utils/wholesale-pricing.util';
 
 const SALE_USER_SELECT = {
   id: true,
@@ -137,19 +142,35 @@ export class SalesService {
 
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
+      const productIds = dto.items.map((item) => item.productId);
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, name: true },
+      });
+      const productNames = new Map(
+        products.map((product) => [product.id, product.name]),
+      );
       const inventories = await tx.inventory.findMany({
         where: {
-          productId: { in: dto.items.map((item) => item.productId) },
+          productId: { in: productIds },
         },
         include: SALE_INVENTORY_INCLUDE,
       });
-      const preparedItems = this.prepareSaleItems(dto.items, inventories, now);
+      const preparedItems = this.prepareSaleItems(
+        dto.items,
+        inventories,
+        productNames,
+        now,
+      );
       const totalPrice = preparedItems.reduce(
         (total, item) => total.plus(item.pricing.totalPrice),
         new Prisma.Decimal(0),
       );
       const requiresValidation =
-        user.role !== 'ADMIN' && dto.items.some((item) => item.wholesale);
+        user.role !== 'ADMIN' &&
+        dto.items.some((item) =>
+          isManualWholesaleRequest(item.quantity, item.wholesale),
+        );
       const status = requiresValidation
         ? CartStatus.PENDING
         : CartStatus.VALIDATED;
@@ -533,6 +554,7 @@ export class SalesService {
   private prepareSaleItems(
     items: readonly CreateSaleItemDto[],
     inventories: readonly SaleInventoryPayload[],
+    productNames: ReadonlyMap<number, string>,
     now: Date,
   ): PreparedSaleItem[] {
     const inventoryByProduct = new Map<number, SaleInventoryPayload[]>();
@@ -548,6 +570,7 @@ export class SalesService {
       this.prepareProductSaleItem(
         item,
         inventoryByProduct.get(item.productId) ?? [],
+        productNames.get(item.productId) ?? `n°${item.productId}`,
         now,
       ),
     );
@@ -556,6 +579,7 @@ export class SalesService {
   private prepareProductSaleItem(
     item: CreateSaleItemDto,
     inventories: readonly SaleInventoryPayload[],
+    productName: string,
     now: Date,
   ): PreparedSaleItem[] {
     const sellableInventories = this.getSellableInventories(inventories, now);
@@ -570,12 +594,12 @@ export class SalesService {
         inventory.remainingQuantity,
       ]),
     );
-    const wholesale = item.wholesale || item.quantity > 3;
+    const wholesale = usesWholesalePrice(item.quantity, item.wholesale);
     const latestInventory = selectLatestInventory(inventories);
 
     if (!latestInventory) {
       throw new ConflictException(
-        `Aucun lot n'est disponible pour le produit ${item.productId}.`,
+        `Aucun lot n'est disponible pour le produit « ${productName} ».`,
       );
     }
 
@@ -643,8 +667,17 @@ export class SalesService {
     );
 
     if (allocatedPaidQuantity !== item.quantity) {
+      const availableQuantity = sellableInventories.reduce(
+        (total, inventory) => total + inventory.remainingQuantity,
+        0,
+      );
+
       throw new ConflictException(
-        `Le stock disponible est insuffisant pour le produit ${item.productId}.`,
+        buildInsufficientStockMessage(
+          productName,
+          item.quantity,
+          availableQuantity,
+        ),
       );
     }
 

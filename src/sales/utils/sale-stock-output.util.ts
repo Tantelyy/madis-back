@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { InventoryMovementType, Prisma } from '@prisma/client';
+import { buildInsufficientStockMessage } from './stock-message.util';
 
 export interface SaleStockOutputValues {
   inventoryId: number;
@@ -27,8 +28,20 @@ export async function recordSaleStockOutput(
   });
 
   if (updated.count === 0) {
+    const inventory = await tx.inventory.findUnique({
+      where: { id: values.inventoryId },
+      select: {
+        remainingQuantity: true,
+        product: { select: { name: true } },
+      },
+    });
+
     throw new ConflictException(
-      `Le stock disponible est insuffisant pour la ligne ${values.inventoryId}.`,
+      buildInsufficientStockMessage(
+        inventory?.product.name ?? `n°${values.inventoryId}`,
+        values.quantity,
+        inventory?.remainingQuantity ?? 0,
+      ),
     );
   }
 

@@ -30,6 +30,15 @@ describe('CreateSaleDto', () => {
     expect(errors).toHaveLength(0);
   });
 
+  it.each([PaymentMethod.CHECK, PaymentMethod.BANK_TRANSFER])(
+    'accepte le nouveau moyen de paiement %s',
+    async (paymentMethod) => {
+      const errors = await validate(createSaleDto(paymentMethod));
+
+      expect(errors).toHaveLength(0);
+    },
+  );
+
   it('accepte une demande de validation sans moyen de paiement', async () => {
     const errors = await validate(createSaleDto(null));
 
