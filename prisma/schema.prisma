@@ -59,9 +59,11 @@ enum CartStatus {
 
 enum PaymentMethod {
   MVOLA
-  AIRTEL_MONEY @map("AIRTEL MONEY")
-  ORANGE_MONEY @map("ORANGE MONEY")
+  AIRTEL_MONEY  @map("AIRTEL MONEY")
+  ORANGE_MONEY  @map("ORANGE MONEY")
   CASH
+  CHECK
+  BANK_TRANSFER
 }
 
 enum SpecialOfferType {

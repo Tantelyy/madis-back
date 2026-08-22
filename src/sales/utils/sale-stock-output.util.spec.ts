@@ -1,4 +1,3 @@
-import { ConflictException } from '@nestjs/common';
 import { InventoryMovementType, Prisma } from '@prisma/client';
 import { recordSaleStockOutput } from './sale-stock-output.util';
 
@@ -46,16 +45,28 @@ describe('recordSaleStockOutput', () => {
 
   it('does not create a movement when the stock is insufficient', async () => {
     const create = jest.fn();
+    const findUnique = jest.fn().mockResolvedValue({
+      remainingQuantity: 0,
+      product: { name: 'Produit test' },
+    });
     const tx = {
       inventory: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findUnique,
       },
       inventoryMovement: { create },
     } as unknown as Prisma.TransactionClient;
 
-    await expect(recordSaleStockOutput(tx, values)).rejects.toBeInstanceOf(
-      ConflictException,
+    await expect(recordSaleStockOutput(tx, values)).rejects.toThrow(
+      'Le stock disponible est insuffisant pour le produit « Produit test » : 1 unité demandée, 0 unité disponible.',
     );
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: values.inventoryId },
+      select: {
+        remainingQuantity: true,
+        product: { select: { name: true } },
+      },
+    });
     expect(create).not.toHaveBeenCalled();
   });
 });
