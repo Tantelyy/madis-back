@@ -59,6 +59,7 @@ interface SpecialOfferWriteData {
   buyQuantity: number | null;
   freeQuantity: number | null;
   type: SpecialOfferType;
+  productIdOffer: number | null;
 }
 
 @Injectable()
@@ -80,6 +81,7 @@ export class SpecialOffersService {
           undefined,
           tx,
         );
+        await this.ensureOfferProductHasStock(dto, tx);
         const inventories = await this.findInventoriesForOffer(
           dto.productIds,
           dto.limitDate,
@@ -182,6 +184,7 @@ export class SpecialOffersService {
           id,
           tx,
         );
+        await this.ensureOfferProductHasStock(dto, tx);
         const inventories = await this.findInventoriesForOffer(
           dto.productIds,
           dto.limitDate,
@@ -326,6 +329,12 @@ export class SpecialOffersService {
         'Une réduction ne doit pas définir de quantités achetées ou gratuites.',
       );
     }
+
+    if (this.isDefined(dto.productIdOffer)) {
+      throw new BadRequestException(
+        'Une réduction ne peut pas définir de produit offert.',
+      );
+    }
   }
 
   private validateFreeQuantityOffer(dto: CreateSpecialOfferDto): void {
@@ -338,6 +347,12 @@ export class SpecialOffersService {
     if (this.isDefined(dto.value) || this.isDefined(dto.unit)) {
       throw new BadRequestException(
         "Une offre BUY_X_GET_N ne doit pas définir de valeur ni d'unité.",
+      );
+    }
+
+    if (!this.isDefined(dto.productIdOffer)) {
+      throw new BadRequestException(
+        'Une offre BUY_X_GET_N doit définir le produit offert.',
       );
     }
   }
@@ -367,7 +382,56 @@ export class SpecialOffersService {
           ? (dto.freeQuantity ?? null)
           : null,
       type: dto.type,
+      productIdOffer:
+        dto.type === SpecialOfferType.BUY_X_GET_N
+          ? (dto.productIdOffer ?? null)
+          : null,
     };
+  }
+
+  private async ensureOfferProductHasStock(
+    dto: CreateSpecialOfferDto,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (dto.type !== SpecialOfferType.BUY_X_GET_N) {
+      return;
+    }
+
+    const productIdOffer = dto.productIdOffer;
+    const freeQuantity = dto.freeQuantity;
+
+    if (!this.isDefined(productIdOffer) || !this.isDefined(freeQuantity)) {
+      return;
+    }
+
+    const product = await tx.product.findFirst({
+      where: { id: productIdOffer, deletedAt: null },
+      select: {
+        name: true,
+        inventories: {
+          where: {
+            remainingQuantity: { gt: 0 },
+            OR: [{ expiredAt: null }, { expiredAt: { gte: new Date() } }],
+          },
+          select: { remainingQuantity: true },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Le produit offert est introuvable.');
+    }
+
+    const availableQuantity = product.inventories.reduce(
+      (total, inventory) => total + inventory.remainingQuantity,
+      0,
+    );
+
+    if (availableQuantity < freeQuantity) {
+      throw new BadRequestException(
+        `Le produit offert « ${product.name} » doit avoir au moins ${freeQuantity} unité(s) en stock.`,
+      );
+    }
   }
 
   private async findActiveOfferOrThrow(
@@ -554,6 +618,7 @@ export class SpecialOffersService {
       buyQuantity: specialOffer.buyQuantity,
       freeQuantity: specialOffer.freeQuantity,
       type: specialOffer.type,
+      productIdOffer: specialOffer.productIdOffer,
       productIds: [
         ...new Set(
           specialOffer.inventorySpecialOffers.map(

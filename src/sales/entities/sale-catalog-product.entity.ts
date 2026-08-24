@@ -7,6 +7,8 @@ export class SaleCatalogPromotionEntity {
   unit!: SpecialOfferUnit | null;
   buyQuantity!: number | null;
   freeQuantity!: number | null;
+  productIdOffer!: number | null;
+  productOfferName!: string | null;
 }
 
 export class SaleCatalogProductEntity {

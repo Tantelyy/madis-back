@@ -24,11 +24,13 @@ import {
 } from './dto/list-inventories-query.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { ListStockSummaryQueryDto } from './dto/list-stock-summary-query.dto';
+import { UpdateStockLimitDto } from './dto/update-stock-limit.dto';
 import { PaginatedInventoryMovements } from './interfaces/paginated-inventory-movements.interface';
 import { InventoryFormOptions } from './interfaces/inventory-form-options.interface';
 import { InventoryEntity } from './entities/inventory.entity';
 import { PaginatedInventories } from './interfaces/paginated-inventories.interface';
 import { PaginatedStockSummary } from './interfaces/paginated-stock-summary.interface';
+import { StockLimitEntity } from './entities/stock-limit.entity';
 import { InventoriesService } from './inventories.service';
 import { InventoryImportService } from './inventory-import.service';
 import {
@@ -86,6 +88,27 @@ export class InventoriesController {
     @Query() query: ListStockSummaryQueryDto,
   ): Promise<PaginatedStockSummary> {
     return this.inventoriesService.findStockSummary(query);
+  }
+
+  @Get('stock-limit')
+  @RequireAccess({
+    roles: ['ADMIN', 'STOCK_MANAGER'],
+    permissions: ['ALL', 'CAN_VIEW_STOCK', 'CAN_MANAGE_ACCOUNTS'],
+  })
+  findStockLimit(): Promise<StockLimitEntity> {
+    return this.inventoriesService.findCurrentStockLimit();
+  }
+
+  @Post('stock-limit')
+  @RequireAccess({
+    roles: ['ADMIN', 'STOCK_MANAGER'],
+    permissions: ['ALL', 'CAN_VIEW_STOCK', 'CAN_MANAGE_ACCOUNTS'],
+  })
+  createStockLimit(
+    @Body() dto: UpdateStockLimitDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<StockLimitEntity> {
+    return this.inventoriesService.createStockLimit(dto.value, user.id);
   }
 
   @Get('form-options')

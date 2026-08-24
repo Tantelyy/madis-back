@@ -1,5 +1,13 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export const STOCK_SUMMARY_SORT_FIELDS = [
   'name',
@@ -29,6 +37,10 @@ export class ListStockSummaryQueryDto {
   @IsString()
   @IsOptional()
   search?: string;
+
+  @IsDateString({}, { message: "La date d'expiration est invalide." })
+  @IsOptional()
+  expiresBefore?: string;
 
   @IsIn(STOCK_SUMMARY_SORT_FIELDS)
   @IsOptional()

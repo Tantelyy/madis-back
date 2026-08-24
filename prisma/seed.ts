@@ -489,6 +489,20 @@ async function seed(): Promise<void> {
       },
     });
 
+    const currentInventoryLimit = await prisma.limitInventory.findFirst({
+      select: { id: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    if (!currentInventoryLimit) {
+      await prisma.limitInventory.create({
+        data: {
+          createdBy: adminUser.id,
+          value: 15,
+        },
+      });
+    }
+
     await prisma.userPermission.upsert({
       where: {
         userId_permissionId: {

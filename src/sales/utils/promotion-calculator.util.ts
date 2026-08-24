@@ -61,6 +61,35 @@ export function calculateFreeQuantityPromotionAllocation(
   };
 }
 
+export function calculateGiftProductPromotionAllocation(
+  requestedQuantity: number,
+  purchasedProductStock: number,
+  offeredProductStock: number,
+  buyQuantity: number,
+  freeQuantity: number,
+): FreeQuantityPromotionAllocation {
+  if (
+    requestedQuantity <= 0 ||
+    purchasedProductStock <= 0 ||
+    offeredProductStock <= 0 ||
+    buyQuantity <= 0 ||
+    freeQuantity <= 0
+  ) {
+    return { paidQuantity: 0, freeQuantity: 0 };
+  }
+
+  const bundleCount = Math.min(
+    Math.floor(requestedQuantity / buyQuantity),
+    Math.floor(purchasedProductStock / buyQuantity),
+    Math.floor(offeredProductStock / freeQuantity),
+  );
+
+  return {
+    paidQuantity: bundleCount * buyQuantity,
+    freeQuantity: bundleCount * freeQuantity,
+  };
+}
+
 export function calculateSalePricing(
   baseUnitPrice: Prisma.Decimal,
   quantity: number,

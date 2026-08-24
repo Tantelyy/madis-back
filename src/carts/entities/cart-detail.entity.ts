@@ -13,10 +13,21 @@ export class CartDetailEntity {
   discountAmount!: string | null;
   wholesale!: boolean;
   specialOfferId!: number | null;
+  refundAt!: Date | null;
+  refundBy!: number | null;
+  refundedQuantity!: number;
+  reason!: string | null;
   product?: CartDetailProductEntity;
+  refundUser?: CartDetailRefundUserEntity | null;
   cart?: CartEntity;
   inventory?: InventoryEntity;
   specialOffer?: SpecialOfferEntity | null;
+}
+
+export class CartDetailRefundUserEntity {
+  id!: number;
+  userName!: string;
+  email!: string;
 }
 
 export class CartDetailProductEntity {
