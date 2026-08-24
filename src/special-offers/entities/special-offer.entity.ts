@@ -24,6 +24,7 @@ export class SpecialOfferEntity {
   freeQuantity!: number | null;
   type!: SpecialOfferType;
   productIds!: number[];
+  productIdOffer!: number | null;
   limitDate!: Date | null;
   isLocked!: boolean;
   createdByUser?: SpecialOfferUserEntity;

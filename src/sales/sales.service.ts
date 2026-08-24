@@ -20,16 +20,22 @@ import { GenerateInvoiceDto } from './dto/generate-invoice.dto';
 import { ListSaleCatalogQueryDto } from './dto/list-sale-catalog-query.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import { SaleCatalogProductEntity } from './entities/sale-catalog-product.entity';
+import { RefundSaleDto } from './dto/refund-sale.dto';
 import { PaginatedSaleCatalog } from './interfaces/paginated-sale-catalog.interface';
 import { PaginatedSales } from './interfaces/paginated-sales.interface';
 import {
   AppliedSalePricing,
   calculateFreeQuantityPromotionAllocation,
+  calculateGiftProductPromotionAllocation,
   calculateSalePricing,
 } from './utils/promotion-calculator.util';
 import { selectLatestInventory } from './utils/latest-inventory.util';
 import { getRestrictedSellerId } from './utils/sale-access.util';
-import { generateInvoicePdf, type InvoiceData } from './utils/invoice-pdf.util';
+import {
+  generateInvoicePdf,
+  type InvoiceData,
+  type InvoiceLine,
+} from './utils/invoice-pdf.util';
 import { recordSaleStockOutput } from './utils/sale-stock-output.util';
 import { buildInsufficientStockMessage } from './utils/stock-message.util';
 import {
@@ -57,6 +63,9 @@ const SALE_INCLUDE = {
           product: true,
         },
       },
+      refundUser: {
+        select: SALE_USER_SELECT,
+      },
     },
   },
   inventoryMovements: {
@@ -74,7 +83,15 @@ const SALE_INCLUDE = {
 const SALE_INVENTORY_INCLUDE = {
   inventorySpecialOffers: {
     include: {
-      specialOffer: true,
+      specialOffer: {
+        include: {
+          productOffer: {
+            include: {
+              inventories: true,
+            },
+          },
+        },
+      },
     },
   },
 } satisfies Prisma.InventoryInclude;
@@ -88,6 +105,7 @@ const SALE_CATALOG_PRODUCT_INCLUDE = {
 const INVOICE_STATUSES: readonly CartStatus[] = [
   CartStatus.VALIDATED,
   CartStatus.PAID,
+  CartStatus.PARTIALLY_REFUNDED,
   CartStatus.REFUNDED,
   CartStatus.CANCELLED,
 ];
@@ -111,9 +129,20 @@ interface PreparedSaleItem {
   productId: number;
   quantity: number;
   wholesale: boolean;
-  inventory: SaleInventoryPayload;
+  inventory: SaleStockInventory;
   pricing: AppliedSalePricing;
   currentPrices: CurrentProductPrices;
+}
+
+interface SaleStockInventory {
+  id: number;
+  productId: number;
+  remainingQuantity: number;
+  expiredAt: Date | null;
+  createdAt: Date;
+  purchasePrice: Prisma.Decimal;
+  salePrice: Prisma.Decimal;
+  wholesalePrice: Prisma.Decimal;
 }
 
 interface CurrentProductPrices {
@@ -441,31 +470,173 @@ export class SalesService {
       status: sale.status,
       reason: sale.reason,
       totalPrice: sale.totalPrice.toFixed(2),
-      lines: sale.cartDetails.map((detail) => ({
-        productName: detail.inventory.product.name,
-        quantity: detail.quantity,
-        freeQuantity: detail.freeQuantity ?? 0,
-        unitPrice: detail.finalUnitPrice.toFixed(2),
-        totalPrice: detail.finalUnitPrice.mul(detail.quantity).toFixed(2),
-      })),
+      lines: this.buildInvoiceLines(sale),
     };
 
     return generateInvoicePdf(invoice);
   }
 
+  private buildInvoiceLines(sale: SalePayload): InvoiceLine[] {
+    return sale.cartDetails.flatMap((detail) => {
+      const freeQuantity = detail.freeQuantity ?? 0;
+      const isStandaloneFreeProduct = detail.quantity === 0 && freeQuantity > 0;
+      const lines: InvoiceLine[] = [
+        {
+          productName: `${detail.inventory.product.name}${
+            isStandaloneFreeProduct ? ' (offert)' : ''
+          }`,
+          quantity: isStandaloneFreeProduct ? freeQuantity : detail.quantity,
+          freeQuantity: isStandaloneFreeProduct ? 0 : freeQuantity,
+          unitPrice: detail.finalUnitPrice.toFixed(2),
+          totalPrice: detail.finalUnitPrice.mul(detail.quantity).toFixed(2),
+        },
+      ];
+      const refundedPaidQuantity = Math.min(
+        detail.refundedQuantity,
+        detail.quantity,
+      );
+
+      if (refundedPaidQuantity > 0) {
+        lines.push({
+          productName: `${detail.inventory.product.name} (remboursé)`,
+          quantity: refundedPaidQuantity,
+          freeQuantity: 0,
+          unitPrice: detail.finalUnitPrice.negated().toFixed(2),
+          totalPrice: detail.finalUnitPrice
+            .mul(refundedPaidQuantity)
+            .negated()
+            .toFixed(2),
+        });
+      }
+
+      return lines;
+    });
+  }
+
   async refund(
     id: number,
-    reason: string,
+    dto: RefundSaleDto,
     user: AuthenticatedUser,
   ): Promise<CartEntity> {
-    return this.reverseSale(
-      id,
-      reason,
-      user,
-      [CartStatus.PAID],
-      CartStatus.REFUNDED,
-      InventoryMovementType.REFUND,
-    );
+    return this.prisma.$transaction(async (tx) => {
+      const cart = await tx.cart.findFirst({
+        where: this.buildAccessibleSaleWhere(id, user),
+        include: {
+          cartDetails: {
+            include: { inventory: true },
+          },
+        },
+      });
+
+      if (!cart) {
+        throw new NotFoundException('Vente introuvable.');
+      }
+
+      if (
+        cart.status !== CartStatus.PAID &&
+        cart.status !== CartStatus.PARTIALLY_REFUNDED
+      ) {
+        throw new BadRequestException(
+          `Une vente au statut ${cart.status} ne peut pas être remboursée.`,
+        );
+      }
+
+      if (Date.now() - cart.createdAt.getTime() > 24 * 60 * 60 * 1000) {
+        throw new BadRequestException(
+          'Une vente ne peut être remboursée que dans les 24 heures suivant sa création.',
+        );
+      }
+
+      const detailsById = new Map(
+        cart.cartDetails.map((detail) => [detail.id, detail]),
+      );
+      const refundAt = new Date();
+      let refundAmount = new Prisma.Decimal(0);
+
+      for (const item of dto.items) {
+        const detail = detailsById.get(item.cartDetailId);
+
+        if (!detail) {
+          throw new BadRequestException(
+            'Un produit sélectionné ne fait pas partie de cette vente.',
+          );
+        }
+
+        const soldQuantity = detail.quantity + (detail.freeQuantity ?? 0);
+        const remainingRefundableQuantity =
+          soldQuantity - detail.refundedQuantity;
+
+        if (item.quantity > remainingRefundableQuantity) {
+          throw new BadRequestException(
+            `La quantité remboursable pour la ligne ${detail.id} est de ${remainingRefundableQuantity}.`,
+          );
+        }
+
+        const refundedPaidQuantityBefore = Math.min(
+          detail.refundedQuantity,
+          detail.quantity,
+        );
+        const refundedPaidQuantityAfter = Math.min(
+          detail.refundedQuantity + item.quantity,
+          detail.quantity,
+        );
+        refundAmount = refundAmount.plus(
+          detail.finalUnitPrice.mul(
+            refundedPaidQuantityAfter - refundedPaidQuantityBefore,
+          ),
+        );
+
+        await tx.cartDetail.update({
+          where: { id: detail.id },
+          data: {
+            refundedQuantity: { increment: item.quantity },
+            refundAt,
+            refundBy: user.id,
+            reason: item.reason.trim(),
+          },
+        });
+
+        await tx.inventoryMovement.create({
+          data: {
+            inventoryId: detail.inventoryId,
+            incomingQuantity: 0,
+            outgoingQuantity: 0,
+            actorId: user.id,
+            type: InventoryMovementType.REFUND,
+            purchasePrice: detail.inventory.purchasePrice,
+            salePrice: detail.inventory.salePrice,
+            wholesalePrice: detail.inventory.wholesalePrice,
+            cartId: id,
+          },
+        });
+      }
+
+      const allDetailsRefunded = cart.cartDetails.every((detail) => {
+        const refundedInRequest =
+          dto.items.find((item) => item.cartDetailId === detail.id)?.quantity ??
+          0;
+
+        return (
+          detail.refundedQuantity + refundedInRequest >=
+          detail.quantity + (detail.freeQuantity ?? 0)
+        );
+      });
+
+      await tx.cart.update({
+        where: { id },
+        data: {
+          status: allDetailsRefunded
+            ? CartStatus.REFUNDED
+            : CartStatus.PARTIALLY_REFUNDED,
+          totalPrice: Prisma.Decimal.max(
+            cart.totalPrice.minus(refundAmount),
+            new Prisma.Decimal(0),
+          ).toFixed(2),
+        },
+      });
+
+      return this.findSaleInTransaction(id, tx);
+    });
   }
 
   async cancel(
@@ -629,23 +800,58 @@ export class SalesService {
     } else if (promotion) {
       const buyQuantity = promotion.offer.buyQuantity ?? 0;
       const freeQuantity = promotion.offer.freeQuantity ?? 0;
-      const promotionAllocation = calculateFreeQuantityPromotionAllocation(
-        item.quantity,
-        promotion.stockQuantity,
-        buyQuantity,
-        freeQuantity,
+      const offeredProductInventories = promotion.offer.productOffer
+        ? this.getSellableInventories(
+            promotion.offer.productOffer.inventories,
+            now,
+          )
+        : sellableInventories;
+      const offeredProductStock = offeredProductInventories.reduce(
+        (total, inventory) => total + inventory.remainingQuantity,
+        0,
       );
+      const promotionAllocation = promotion.offer.productOffer
+        ? calculateGiftProductPromotionAllocation(
+            item.quantity,
+            promotion.stockQuantity,
+            offeredProductStock,
+            buyQuantity,
+            freeQuantity,
+          )
+        : calculateFreeQuantityPromotionAllocation(
+            item.quantity,
+            promotion.stockQuantity,
+            buyQuantity,
+            freeQuantity,
+          );
       promotionPaidQuantity = promotionAllocation.paidQuantity;
-      this.allocateFreeQuantityPromotion(
+      this.allocateBuyQuantityPromotion(
         item.productId,
         promotionPaidQuantity,
-        promotionAllocation.freeQuantity,
         wholesale,
         baseUnitPrice,
         currentPrices,
         orderedInventories,
         remainingStocks,
         promotion,
+        allocations,
+      );
+      this.allocateOfferedProduct(
+        promotion.offer.productIdOffer ?? item.productId,
+        promotionAllocation.freeQuantity,
+        promotion.offer.id,
+        offeredProductInventories,
+        promotion.offer.productIdOffer === item.productId
+          ? remainingStocks
+          : new Map(
+              offeredProductInventories.map((inventory) => [
+                inventory.id,
+                inventory.remainingQuantity,
+              ]),
+            ),
+        promotion.offer.productIdOffer === null
+          ? promotion.inventoryIds
+          : undefined,
         allocations,
       );
     }
@@ -728,10 +934,9 @@ export class SalesService {
     }
   }
 
-  private allocateFreeQuantityPromotion(
+  private allocateBuyQuantityPromotion(
     productId: number,
     paidQuantity: number,
-    freeQuantity: number,
     wholesale: boolean,
     baseUnitPrice: Prisma.Decimal,
     currentPrices: CurrentProductPrices,
@@ -741,11 +946,10 @@ export class SalesService {
     allocations: PreparedSaleItem[],
   ): void {
     let remainingPaidQuantity = paidQuantity;
-    let remainingFreeQuantity = freeQuantity;
 
     for (const inventory of inventories) {
       if (
-        (remainingPaidQuantity === 0 && remainingFreeQuantity === 0) ||
+        remainingPaidQuantity === 0 ||
         !promotion.inventoryIds.has(inventory.id)
       ) {
         continue;
@@ -756,13 +960,8 @@ export class SalesService {
         remainingPaidQuantity,
         availableQuantity,
       );
-      const allocatedFreeQuantity = Math.min(
-        remainingFreeQuantity,
-        availableQuantity - allocatedPaidQuantity,
-      );
-      const stockQuantity = allocatedPaidQuantity + allocatedFreeQuantity;
 
-      if (stockQuantity === 0) {
+      if (allocatedPaidQuantity === 0) {
         continue;
       }
 
@@ -774,19 +973,94 @@ export class SalesService {
         currentPrices,
         pricing: {
           specialOfferId: promotion.offer.id,
-          freeQuantity: allocatedFreeQuantity || null,
+          freeQuantity: null,
           baseUnitPrice,
           finalUnitPrice: baseUnitPrice,
           discountAmount: null,
           totalPrice: baseUnitPrice
             .mul(allocatedPaidQuantity)
             .toDecimalPlaces(2),
-          stockQuantity,
+          stockQuantity: allocatedPaidQuantity,
         },
       });
-      remainingStocks.set(inventory.id, availableQuantity - stockQuantity);
+      remainingStocks.set(
+        inventory.id,
+        availableQuantity - allocatedPaidQuantity,
+      );
       remainingPaidQuantity -= allocatedPaidQuantity;
-      remainingFreeQuantity -= allocatedFreeQuantity;
+    }
+  }
+
+  private allocateOfferedProduct(
+    productId: number,
+    requestedQuantity: number,
+    specialOfferId: number,
+    inventories: readonly SaleStockInventory[],
+    remainingStocks: Map<number, number>,
+    allowedInventoryIds: ReadonlySet<number> | undefined,
+    allocations: PreparedSaleItem[],
+  ): void {
+    let remainingQuantity = requestedQuantity;
+    const latestInventory = selectLatestInventory(inventories);
+
+    if (remainingQuantity === 0) {
+      return;
+    }
+
+    if (!latestInventory) {
+      throw new ConflictException(
+        'Le produit offert ne possède aucun lot disponible.',
+      );
+    }
+
+    const currentPrices: CurrentProductPrices = {
+      retailPrice: latestInventory.salePrice,
+      wholesalePrice: latestInventory.wholesalePrice,
+    };
+
+    for (const inventory of this.sortInventoriesForSale(
+      inventories,
+      allowedInventoryIds,
+    )) {
+      if (remainingQuantity === 0) {
+        return;
+      }
+
+      if (allowedInventoryIds && !allowedInventoryIds.has(inventory.id)) {
+        continue;
+      }
+
+      const availableQuantity = remainingStocks.get(inventory.id) ?? 0;
+      const quantity = Math.min(remainingQuantity, availableQuantity);
+
+      if (quantity === 0) {
+        continue;
+      }
+
+      allocations.push({
+        productId,
+        quantity: 0,
+        wholesale: false,
+        inventory,
+        currentPrices,
+        pricing: {
+          specialOfferId,
+          freeQuantity: quantity,
+          baseUnitPrice: currentPrices.retailPrice,
+          finalUnitPrice: new Prisma.Decimal(0),
+          discountAmount: null,
+          totalPrice: new Prisma.Decimal(0),
+          stockQuantity: quantity,
+        },
+      });
+      remainingStocks.set(inventory.id, availableQuantity - quantity);
+      remainingQuantity -= quantity;
+    }
+
+    if (remainingQuantity > 0) {
+      throw new ConflictException(
+        'Le stock du produit offert est insuffisant pour appliquer cette promotion.',
+      );
     }
   }
 
@@ -855,7 +1129,7 @@ export class SalesService {
     return (
       [...promotions.values()]
         .filter(({ offer, stockQuantity }) =>
-          this.hasSufficientPromotionStock(offer, stockQuantity),
+          this.hasSufficientPromotionStock(offer, stockQuantity, now),
         )
         .sort(
           (firstPromotion, secondPromotion) =>
@@ -869,6 +1143,7 @@ export class SalesService {
   private hasSufficientPromotionStock(
     offer: SaleSpecialOfferPayload,
     stockQuantity: number,
+    now: Date,
   ): boolean {
     if (offer.type === 'REDUCTION') {
       return stockQuantity > 0;
@@ -876,6 +1151,23 @@ export class SalesService {
 
     const buyQuantity = offer.buyQuantity ?? 0;
     const freeQuantity = offer.freeQuantity ?? 0;
+
+    if (offer.productOffer) {
+      const offeredProductStock = this.getSellableInventories(
+        offer.productOffer.inventories,
+        now,
+      ).reduce((total, inventory) => total + inventory.remainingQuantity, 0);
+
+      return (
+        calculateGiftProductPromotionAllocation(
+          buyQuantity,
+          stockQuantity,
+          offeredProductStock,
+          buyQuantity,
+          freeQuantity,
+        ).paidQuantity > 0
+      );
+    }
 
     return (
       calculateFreeQuantityPromotionAllocation(
@@ -887,10 +1179,10 @@ export class SalesService {
     );
   }
 
-  private getSellableInventories(
-    inventories: readonly SaleInventoryPayload[],
+  private getSellableInventories<TInventory extends SaleStockInventory>(
+    inventories: readonly TInventory[],
     now: Date,
-  ): SaleInventoryPayload[] {
+  ): TInventory[] {
     return inventories.filter(
       (inventory) =>
         inventory.remainingQuantity > 0 &&
@@ -898,10 +1190,10 @@ export class SalesService {
     );
   }
 
-  private sortInventoriesForSale(
-    inventories: readonly SaleInventoryPayload[],
+  private sortInventoriesForSale<TInventory extends SaleStockInventory>(
+    inventories: readonly TInventory[],
     promotionalInventoryIds?: ReadonlySet<number>,
-  ): SaleInventoryPayload[] {
+  ): TInventory[] {
     return [...inventories].sort((firstInventory, secondInventory) => {
       const promotionPriority =
         Number(promotionalInventoryIds?.has(secondInventory.id) ?? false) -
@@ -978,6 +1270,8 @@ export class SalesService {
             unit: promotion.offer.unit,
             buyQuantity: promotion.offer.buyQuantity,
             freeQuantity: promotion.offer.freeQuantity,
+            productIdOffer: promotion.offer.productIdOffer,
+            productOfferName: promotion.offer.productOffer?.name ?? null,
           }
         : null,
     };
@@ -1132,6 +1426,11 @@ export class SalesService {
         discountAmount: detail.discountAmount?.toFixed(2) ?? null,
         wholesale: detail.wholesale,
         specialOfferId: detail.specialOfferId,
+        refundAt: detail.refundAt,
+        refundBy: detail.refundBy,
+        refundedQuantity: detail.refundedQuantity,
+        reason: detail.reason,
+        refundUser: detail.refundUser,
         product: {
           id: detail.inventory.product.id,
           name: detail.inventory.product.name,

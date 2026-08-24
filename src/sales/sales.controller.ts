@@ -26,6 +26,7 @@ import { ListSaleCatalogQueryDto } from './dto/list-sale-catalog-query.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import { PaySaleDto } from './dto/pay-sale.dto';
 import { SaleReversalDto } from './dto/sale-reversal.dto';
+import { RefundSaleDto } from './dto/refund-sale.dto';
 import { PaginatedSales } from './interfaces/paginated-sales.interface';
 import { PaginatedSaleCatalog } from './interfaces/paginated-sale-catalog.interface';
 import { SalesService } from './sales.service';
@@ -127,10 +128,10 @@ export class SalesController {
   @Post(':id/refund')
   refund(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: SaleReversalDto,
+    @Body() dto: RefundSaleDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CartEntity> {
-    return this.salesService.refund(id, dto.reason, user);
+    return this.salesService.refund(id, dto, user);
   }
 
   @Post(':id/cancel')

@@ -28,6 +28,7 @@ import { PaginatedStockSummary } from './interfaces/paginated-stock-summary.inte
 import type { StockSummaryEntity } from './entities/stock-summary.entity';
 import { InventoryPricingService } from './inventory-pricing.service';
 import { buildIncomingInventoryData } from './utils/inventory-write.util';
+import { StockLimitEntity } from './entities/stock-limit.entity';
 
 const INVENTORY_USER_SELECT = {
   id: true,
@@ -142,6 +143,9 @@ export class InventoriesService {
     query: ListStockSummaryQueryDto,
   ): Promise<PaginatedStockSummary> {
     const trimmedSearch = query.search?.trim();
+    const expiresBefore = query.expiresBefore
+      ? this.toEndOfDay(query.expiresBefore)
+      : undefined;
     const products = await this.prisma.product.findMany({
       where: {
         deletedAt: null,
@@ -157,6 +161,10 @@ export class InventoriesService {
         name: true,
         reference: true,
         inventories: {
+          where: {
+            expiredAt: expiresBefore ? { lte: expiresBefore } : undefined,
+            remainingQuantity: expiresBefore ? { gt: 0 } : undefined,
+          },
           select: {
             id: true,
             expiredAt: true,
@@ -166,20 +174,22 @@ export class InventoriesService {
         },
       },
     });
-    const summaries = products.map<StockSummaryEntity>((product) => ({
-      productId: product.id,
-      name: product.name,
-      reference: product.reference,
-      remainingQuantity: product.inventories.reduce(
-        (total, inventory) => total + inventory.remainingQuantity,
-        0,
-      ),
-      lots: product.inventories.map((inventory) => ({
-        id: inventory.id,
-        expiredAt: inventory.expiredAt,
-        remainingQuantity: inventory.remainingQuantity,
-      })),
-    }));
+    const summaries = products
+      .map<StockSummaryEntity>((product) => ({
+        productId: product.id,
+        name: product.name,
+        reference: product.reference,
+        remainingQuantity: product.inventories.reduce(
+          (total, inventory) => total + inventory.remainingQuantity,
+          0,
+        ),
+        lots: product.inventories.map((inventory) => ({
+          id: inventory.id,
+          expiredAt: inventory.expiredAt,
+          remainingQuantity: inventory.remainingQuantity,
+        })),
+      }))
+      .filter((summary) => !expiresBefore || summary.lots.length > 0);
 
     summaries.sort((first, second) =>
       this.compareStockSummaries(first, second, query.sortBy, query.order),
@@ -199,6 +209,27 @@ export class InventoriesService {
     };
   }
 
+  async findCurrentStockLimit(): Promise<StockLimitEntity> {
+    const limit = await this.prisma.limitInventory.findFirst({
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    if (!limit) {
+      throw new NotFoundException('Aucun seuil de stock n’est configuré.');
+    }
+
+    return limit;
+  }
+
+  async createStockLimit(
+    value: number,
+    userId: number,
+  ): Promise<StockLimitEntity> {
+    return this.prisma.limitInventory.create({
+      data: { value, createdBy: userId },
+    });
+  }
+
   private compareStockSummaries(
     first: StockSummaryEntity,
     second: StockSummaryEntity,
@@ -214,6 +245,10 @@ export class InventoriesService {
           });
 
     return comparison * direction;
+  }
+
+  private toEndOfDay(value: string): Date {
+    return new Date(`${value}T23:59:59.999Z`);
   }
 
   async findFormOptions(): Promise<InventoryFormOptions> {

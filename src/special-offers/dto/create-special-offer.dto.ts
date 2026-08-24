@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { SpecialOfferType, SpecialOfferUnit } from '@prisma/client';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
@@ -17,12 +18,19 @@ import {
 
 export class CreateSpecialOfferDto {
   @IsArray({ message: 'Les produits sont invalides.' })
+  @ArrayMaxSize(1, { message: 'Sélectionnez un seul produit.' })
   @ArrayMinSize(1, { message: 'Sélectionnez au moins un produit.' })
   @ArrayUnique({ message: "Un produit ne peut être sélectionné qu'une fois." })
   @Type(() => Number)
   @IsInt({ each: true, message: 'Un produit est invalide.' })
   @Min(1, { each: true, message: 'Un produit est invalide.' })
   productIds!: number[];
+
+  @Type(() => Number)
+  @IsInt({ message: 'Le produit offert est invalide.' })
+  @Min(1, { message: 'Le produit offert est invalide.' })
+  @IsOptional()
+  productIdOffer?: number;
 
   @IsString()
   @IsNotEmpty({ message: "Le libellé de l'offre est obligatoire." })

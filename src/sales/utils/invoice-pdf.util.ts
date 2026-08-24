@@ -86,6 +86,7 @@ function formatInvoiceStatus(status: string): string {
   const labels: Readonly<Record<string, string>> = {
     VALIDATED: 'Validée',
     PAID: 'Payée',
+    PARTIALLY_REFUNDED: 'Partiellement remboursée',
     REFUNDED: 'Remboursée',
     CANCELLED: 'Annulée',
   };

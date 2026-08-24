@@ -1,6 +1,7 @@
 import { Prisma, SpecialOfferType, SpecialOfferUnit } from '@prisma/client';
 import {
   calculateFreeQuantityPromotionAllocation,
+  calculateGiftProductPromotionAllocation,
   calculateSalePricing,
   PromotionCandidate,
 } from './promotion-calculator.util';
@@ -97,6 +98,14 @@ describe('calculateFreeQuantityPromotionAllocation', () => {
 
   it('limits BUY_X_GET_N bundles to the remaining promotion stock', () => {
     const allocation = calculateFreeQuantityPromotionAllocation(6, 7, 2, 1);
+
+    expect(allocation).toEqual({ paidQuantity: 4, freeQuantity: 2 });
+  });
+});
+
+describe('calculateGiftProductPromotionAllocation', () => {
+  it('limits bundles to the stock of the purchased and offered products', () => {
+    const allocation = calculateGiftProductPromotionAllocation(8, 8, 2, 2, 1);
 
     expect(allocation).toEqual({ paidQuantity: 4, freeQuantity: 2 });
   });

@@ -31,6 +31,8 @@ model User {
   validatedCarts       Cart[]              @relation("CartValidatedBy")
   createdSpecialOffers SpecialOffer[]      @relation("SpecialOfferCreatedBy")
   deletedSpecialOffers SpecialOffer[]      @relation("SpecialOfferDeletedBy")
+  createdInventoryLimits LimitInventory[]  @relation("LimitInventoryCreatedBy")
+  refundedCartDetails   CartDetail[]       @relation("CartDetailRefundedBy")
 
   @@map("Users")
 }
@@ -53,6 +55,7 @@ enum CartStatus {
   PENDING
   VALIDATED
   PAID
+  PARTIALLY_REFUNDED
   REFUNDED
   CANCELLED
 }
@@ -222,6 +225,7 @@ model Product {
   updatedByUser   User?                @relation("ProductUpdatedBy", fields: [updatedBy], references: [id])
   deletedByUser   User?                @relation("ProductDeletedBy", fields: [deletedBy], references: [id])
   inventories     Inventory[]
+  offeredBySpecialOffers SpecialOffer[] @relation("SpecialOfferProductOffer")
 
   @@map("Products")
 }
@@ -312,13 +316,19 @@ model CartDetail {
   discountAmount Decimal?      @db.Decimal(12, 2)
   wholesale      Boolean       @default(false) @map("wholeSale")
   specialOfferId Int?
+  refundAt       DateTime?
+  refundBy       Int?
+  refundedQuantity Int @default(0)
+  reason         String?
   cart           Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)
   inventory      Inventory     @relation(fields: [inventoryId], references: [id])
   specialOffer   SpecialOffer? @relation(fields: [specialOfferId], references: [id], onDelete: SetNull)
+  refundUser     User?         @relation("CartDetailRefundedBy", fields: [refundBy], references: [id], onDelete: SetNull)
 
   @@index([cartId])
   @@index([inventoryId])
   @@index([specialOfferId])
+  @@index([refundBy])
   @@map("CartDetails")
 }
 
@@ -337,15 +347,30 @@ model SpecialOffer {
   buyQuantity            Int?
   freeQuantity           Int?
   type                   SpecialOfferType
+  productIdOffer         Int?
   createdByUser          User                    @relation("SpecialOfferCreatedBy", fields: [createdBy], references: [id])
   deletedByUser          User?                   @relation("SpecialOfferDeletedBy", fields: [deletedBy], references: [id])
   inventorySpecialOffers InventorySpecialOffer[]
   cartDetails            CartDetail[]
+  productOffer           Product?                @relation("SpecialOfferProductOffer", fields: [productIdOffer], references: [id], onDelete: SetNull)
 
   @@index([createdBy])
   @@index([deletedBy])
   @@index([startDateTime, endDateTime])
+  @@index([productIdOffer])
   @@map("SpecialOffers")
+}
+
+model LimitInventory {
+  id            Int      @id @default(autoincrement()) @map("ID")
+  createdAt     DateTime @default(now())
+  createdBy     Int
+  value         Int
+  createdByUser User     @relation("LimitInventoryCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("LimitInventory")
 }
 
 model InventorySpecialOffer {
