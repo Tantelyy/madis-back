@@ -73,6 +73,8 @@ describe('SaleImportService', () => {
       data: {
         soldBy: 3,
         validatedBy: 3,
+        validatedAt: saleDate,
+        paidAt: saleDate,
         createdAt: saleDate,
         status: CartStatus.PAID,
         paymentMethod: PaymentMethod.CASH,
