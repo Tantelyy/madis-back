@@ -209,13 +209,13 @@ export class SalesService {
           soldBy: user.id,
           status,
           validatedBy: requiresValidation ? null : user.id,
+          validatedAt: requiresValidation ? null : now,
           totalPrice: totalPrice.toFixed(2),
           customerName: dto.customerName?.trim() || null,
           customerContact: dto.customerContact?.trim() || null,
           customerAddress: dto.customerAddress?.trim() || null,
           customerNif: dto.customerNif?.trim() || null,
           customerStat: dto.customerStat?.trim() || null,
-          paymentMethod: dto.paymentMethod,
           cartDetails: {
             create: preparedItems.map((item) => ({
               inventoryId: item.inventory.id,
@@ -231,10 +231,6 @@ export class SalesService {
         },
         select: { id: true },
       });
-
-      for (const item of preparedItems) {
-        await this.recordStockOutput(tx, item, cart.id, user.id);
-      }
 
       return this.findSaleInTransaction(cart.id, tx);
     });
@@ -335,6 +331,7 @@ export class SalesService {
         data: {
           status: CartStatus.PAID,
           paymentMethod,
+          paidAt: new Date(),
         },
       });
 
@@ -345,6 +342,23 @@ export class SalesService {
           user,
           tx,
         );
+      }
+
+      const details = await tx.cartDetail.findMany({
+        where: { cartId: id },
+        include: { inventory: true },
+      });
+
+      for (const detail of details) {
+        await recordSaleStockOutput(tx, {
+          inventoryId: detail.inventoryId,
+          quantity: detail.quantity + (detail.freeQuantity ?? 0),
+          actorId: user.id,
+          cartId: id,
+          purchasePrice: detail.inventory.purchasePrice,
+          salePrice: detail.inventory.salePrice,
+          wholesalePrice: detail.inventory.wholesalePrice,
+        });
       }
 
       return this.findSaleInTransaction(id, tx);
@@ -358,6 +372,7 @@ export class SalesService {
         data: {
           status: CartStatus.VALIDATED,
           validatedBy: admin.id,
+          validatedAt: new Date(),
         },
       });
 
@@ -532,10 +547,7 @@ export class SalesService {
         throw new NotFoundException('Vente introuvable.');
       }
 
-      if (
-        cart.status !== CartStatus.PAID &&
-        cart.status !== CartStatus.PARTIALLY_REFUNDED
-      ) {
+      if (cart.status !== CartStatus.PAID) {
         throw new BadRequestException(
           `Une vente au statut ${cart.status} ne peut pas être remboursée.`,
         );
@@ -650,7 +662,6 @@ export class SalesService {
       user,
       [CartStatus.PENDING, CartStatus.VALIDATED],
       CartStatus.CANCELLED,
-      InventoryMovementType.CANCELLATION,
     );
   }
 
@@ -660,15 +671,12 @@ export class SalesService {
     user: AuthenticatedUser,
     expectedStatuses: readonly CartStatus[],
     targetStatus: CartStatus,
-    movementType: InventoryMovementType,
   ): Promise<CartEntity> {
     return this.prisma.$transaction(async (tx) => {
       const cart = await tx.cart.findFirst({
         where: this.buildAccessibleSaleWhere(id, user),
-        include: {
-          cartDetails: {
-            include: { inventory: true },
-          },
+        select: {
+          status: true,
         },
       });
 
@@ -692,30 +700,6 @@ export class SalesService {
         throw new BadRequestException(
           `Une vente au statut ${cart.status} ne peut pas effectuer cette action.`,
         );
-      }
-
-      for (const detail of cart.cartDetails) {
-        const restoredQuantity = detail.quantity + (detail.freeQuantity ?? 0);
-
-        await tx.inventory.update({
-          where: { id: detail.inventoryId },
-          data: {
-            remainingQuantity: { increment: restoredQuantity },
-          },
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            inventoryId: detail.inventoryId,
-            incomingQuantity: restoredQuantity,
-            outgoingQuantity: 0,
-            actorId: user.id,
-            type: movementType,
-            purchasePrice: detail.inventory.purchasePrice,
-            salePrice: detail.inventory.salePrice,
-            wholesalePrice: detail.inventory.wholesalePrice,
-            cartId: id,
-          },
-        });
       }
 
       return this.findSaleInTransaction(id, tx);
@@ -1287,23 +1271,6 @@ export class SalesService {
     }
   }
 
-  private async recordStockOutput(
-    tx: Prisma.TransactionClient,
-    item: PreparedSaleItem,
-    cartId: number,
-    userId: number,
-  ): Promise<void> {
-    await recordSaleStockOutput(tx, {
-      inventoryId: item.inventory.id,
-      quantity: item.pricing.stockQuantity,
-      actorId: userId,
-      cartId,
-      purchasePrice: item.inventory.purchasePrice,
-      salePrice: item.currentPrices.retailPrice,
-      wholesalePrice: item.currentPrices.wholesalePrice,
-    });
-  }
-
   private async throwInvalidSaleTransition(
     id: number,
     expectedStatuses: readonly CartStatus[],
@@ -1405,6 +1372,8 @@ export class SalesService {
       updatedAt: sale.updatedAt,
       status: sale.status,
       validatedBy: sale.validatedBy,
+      validatedAt: sale.validatedAt,
+      paidAt: sale.paidAt,
       totalPrice: sale.totalPrice.toFixed(2),
       customerName: sale.customerName,
       customerContact: sale.customerContact,

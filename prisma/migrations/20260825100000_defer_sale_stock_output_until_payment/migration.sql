@@ -1,0 +1,3 @@
+ALTER TABLE "Carts"
+ADD COLUMN "validatedAt" TIMESTAMP(3),
+ADD COLUMN "paidAt" TIMESTAMP(3);

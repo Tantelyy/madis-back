@@ -3,7 +3,7 @@ import type { PrismaService } from '../prisma/prisma.service';
 import { DashboardService } from './dashboard.service';
 
 describe('DashboardService', () => {
-  it('uses paid quantities only for revenue and sold cost', async () => {
+  it('uses net paid quantities for a partially refunded sale', async () => {
     const inventoryFindMany = jest.fn().mockReturnValue('inventory-query');
     const cartFindMany = jest.fn().mockReturnValue('cart-query');
     const transaction = jest.fn().mockResolvedValue([
@@ -20,6 +20,7 @@ describe('DashboardService', () => {
           cartDetails: [
             {
               quantity: 2,
+              refundedQuantity: 1,
               finalUnitPrice: new Prisma.Decimal(150),
               inventory: { purchasePrice: new Prisma.Decimal(100) },
             },
@@ -42,16 +43,28 @@ describe('DashboardService', () => {
 
     expect(result.totals).toEqual({
       purchaseAmount: '300.00',
-      revenue: '300.00',
-      costOfGoodsSold: '200.00',
-      profit: '100.00',
+      revenue: '150.00',
+      costOfGoodsSold: '100.00',
+      profit: '50.00',
     });
     expect(result.points.map((point) => point.label)).toEqual(['08 h', '10 h']);
+    expect(cartFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ['PAID', 'PARTIALLY_REFUNDED'] },
+        }),
+        select: expect.objectContaining({
+          cartDetails: {
+            select: expect.objectContaining({ refundedQuantity: true }),
+          },
+        }),
+      }),
+    );
   });
 
-  it('aggregates paid sales by product and paginates after sorting', async () => {
+  it('aggregates net paid quantities by product and paginates after sorting', async () => {
     const productFindMany = jest.fn().mockReturnValue('product-query');
-    const cartDetailGroupBy = jest.fn().mockReturnValue('sales-query');
+    const cartDetailFindMany = jest.fn().mockReturnValue('sales-query');
     const transaction = jest.fn().mockResolvedValue([
       [
         {
@@ -80,14 +93,14 @@ describe('DashboardService', () => {
         },
       ],
       [
-        { inventoryId: 11, _sum: { quantity: 3 } },
-        { inventoryId: 12, _sum: { quantity: 2 } },
-        { inventoryId: 21, _sum: { quantity: 7 } },
+        { inventoryId: 11, quantity: 3, refundedQuantity: 0 },
+        { inventoryId: 12, quantity: 2, refundedQuantity: 1 },
+        { inventoryId: 21, quantity: 7, refundedQuantity: 0 },
       ],
     ]);
     const prisma = {
       product: { findMany: productFindMany },
-      cartDetail: { groupBy: cartDetailGroupBy },
+      cartDetail: { findMany: cartDetailFindMany },
       $transaction: transaction,
     } as unknown as PrismaService;
     const service = new DashboardService(prisma);
@@ -115,7 +128,7 @@ describe('DashboardService', () => {
         productName: 'Produit A',
         productTypeId: 7,
         productType: 'Alimentaire',
-        soldQuantity: 5,
+        soldQuantity: 4,
         currentStock: 12,
       },
     ]);
@@ -132,11 +145,11 @@ describe('DashboardService', () => {
         where: { deletedAt: null, productTypeId: 7 },
       }),
     );
-    expect(cartDetailGroupBy).toHaveBeenCalledWith(
+    expect(cartDetailFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           cart: {
-            status: 'PAID',
+            status: { in: ['PAID', 'PARTIALLY_REFUNDED'] },
             createdAt: {
               gte: new Date('2026-08-03T21:00:00.000Z'),
               lt: new Date('2026-08-10T21:00:00.000Z'),
@@ -145,6 +158,11 @@ describe('DashboardService', () => {
           inventory: {
             product: { deletedAt: null, productTypeId: 7 },
           },
+        },
+        select: {
+          inventoryId: true,
+          quantity: true,
+          refundedQuantity: true,
         },
       }),
     );

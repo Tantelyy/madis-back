@@ -125,6 +125,8 @@ export class SaleImportService {
         data: {
           soldBy: userId,
           validatedBy: userId,
+          validatedAt: row.saleCreatedAt,
+          paidAt: row.saleCreatedAt,
           createdAt: row.saleCreatedAt,
           status: CartStatus.PAID,
           paymentMethod: PaymentMethod.CASH,
