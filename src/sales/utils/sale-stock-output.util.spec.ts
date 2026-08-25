@@ -69,4 +69,25 @@ describe('recordSaleStockOutput', () => {
     });
     expect(create).not.toHaveBeenCalled();
   });
+
+  it('records a promotion gift with its dedicated movement type', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 1 });
+    const tx = {
+      inventory: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      inventoryMovement: { create },
+    } as unknown as Prisma.TransactionClient;
+
+    await recordSaleStockOutput(tx, {
+      ...values,
+      type: InventoryMovementType.PROMOTION_GIFT,
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: InventoryMovementType.PROMOTION_GIFT,
+        }),
+      }),
+    );
+  });
 });
