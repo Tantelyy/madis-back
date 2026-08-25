@@ -547,10 +547,7 @@ export class SalesService {
         throw new NotFoundException('Vente introuvable.');
       }
 
-      if (
-        cart.status !== CartStatus.PAID &&
-        cart.status !== CartStatus.PARTIALLY_REFUNDED
-      ) {
+      if (cart.status !== CartStatus.PAID) {
         throw new BadRequestException(
           `Une vente au statut ${cart.status} ne peut pas être remboursée.`,
         );

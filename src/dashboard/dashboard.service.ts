@@ -35,6 +35,10 @@ interface MutableStockValueByProductType {
 }
 
 const ZERO = new Prisma.Decimal(0);
+const DASHBOARD_SALE_STATUSES: readonly CartStatus[] = [
+  CartStatus.PAID,
+  CartStatus.PARTIALLY_REFUNDED,
+];
 
 @Injectable()
 export class DashboardService {
@@ -56,7 +60,7 @@ export class DashboardService {
       query.timezoneOffset,
       granularity,
     );
-    const [inventories, paidSales] = await this.prisma.$transaction([
+    const [inventories, sales] = await this.prisma.$transaction([
       this.prisma.inventory.findMany({
         where: { createdAt: { gte: from, lt: to } },
         select: {
@@ -68,13 +72,14 @@ export class DashboardService {
       this.prisma.cart.findMany({
         where: {
           createdAt: { gte: from, lt: to },
-          status: CartStatus.PAID,
+          status: { in: [...DASHBOARD_SALE_STATUSES] },
         },
         select: {
           createdAt: true,
           cartDetails: {
             select: {
               quantity: true,
+              refundedQuantity: true,
               finalUnitPrice: true,
               inventory: {
                 select: { purchasePrice: true },
@@ -100,7 +105,7 @@ export class DashboardService {
       }
     }
 
-    for (const sale of paidSales) {
+    for (const sale of sales) {
       const bucketIndex = findBucketIndex(buckets, sale.createdAt);
 
       if (bucketIndex < 0) {
@@ -108,15 +113,17 @@ export class DashboardService {
       }
 
       for (const detail of sale.cartDetails) {
+        const netPaidQuantity = this.getNetPaidQuantity(detail);
+
         valuesByBucket[bucketIndex].revenue = valuesByBucket[
           bucketIndex
-        ].revenue.plus(detail.finalUnitPrice.mul(detail.quantity));
+        ].revenue.plus(detail.finalUnitPrice.mul(netPaidQuantity));
         valuesByBucket[bucketIndex].costOfGoodsSold = valuesByBucket[
           bucketIndex
         ].costOfGoodsSold.plus(
           // Une unité offerte sort du stock mais contribue à 0 Ar au coût
           // statistique demandé : seule la quantité facturée est comptée.
-          detail.inventory.purchasePrice.mul(detail.quantity),
+          detail.inventory.purchasePrice.mul(netPaidQuantity),
         );
       }
     }
@@ -168,7 +175,7 @@ export class DashboardService {
       deletedAt: null,
       productTypeId: query.productTypeId,
     };
-    const [products, salesByInventory] = await this.prisma.$transaction([
+    const [products, saleDetails] = await this.prisma.$transaction([
       this.prisma.product.findMany({
         where: productWhere,
         select: {
@@ -181,17 +188,19 @@ export class DashboardService {
           },
         },
       }),
-      this.prisma.cartDetail.groupBy({
-        by: ['inventoryId'],
-        orderBy: { inventoryId: 'asc' },
+      this.prisma.cartDetail.findMany({
         where: {
           cart: {
-            status: CartStatus.PAID,
+            status: { in: [...DASHBOARD_SALE_STATUSES] },
             createdAt: { gte: from, lt: to },
           },
           inventory: { product: productWhere },
         },
-        _sum: { quantity: true },
+        select: {
+          inventoryId: true,
+          quantity: true,
+          refundedQuantity: true,
+        },
       }),
     ]);
     const productIdByInventoryId = new Map<number, number>();
@@ -204,14 +213,14 @@ export class DashboardService {
 
     const soldQuantityByProductId = new Map<number, number>();
 
-    for (const sale of salesByInventory) {
-      const productId = productIdByInventoryId.get(sale.inventoryId);
+    for (const detail of saleDetails) {
+      const productId = productIdByInventoryId.get(detail.inventoryId);
 
       if (productId !== undefined) {
         soldQuantityByProductId.set(
           productId,
           (soldQuantityByProductId.get(productId) ?? 0) +
-            (sale._sum?.quantity ?? 0),
+            this.getNetPaidQuantity(detail),
         );
       }
     }
@@ -348,5 +357,15 @@ export class DashboardService {
         ? '0.00'
         : profit.toDecimalPlaces(2).toFixed(2),
     };
+  }
+
+  private getNetPaidQuantity(detail: {
+    quantity: number;
+    refundedQuantity: number;
+  }): number {
+    return Math.max(
+      detail.quantity - Math.min(detail.refundedQuantity, detail.quantity),
+      0,
+    );
   }
 }

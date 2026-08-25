@@ -143,4 +143,36 @@ describe('SalesService stock flow', () => {
       }),
     );
   });
+
+  it('refuses a second refund once a sale is partially refunded', async () => {
+    const tx = {
+      cart: {
+        findFirst: jest.fn().mockResolvedValue({
+          status: CartStatus.PARTIALLY_REFUNDED,
+        }),
+      },
+      cartDetail: { update: jest.fn() },
+      inventoryMovement: { create: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    } as unknown as PrismaService;
+    const service = new SalesService(prisma, {} as ConfigService);
+
+    await expect(
+      service.refund(
+        8,
+        {
+          items: [
+            { cartDetailId: 20, quantity: 1, reason: 'Retour client' },
+          ],
+        },
+        user,
+      ),
+    ).rejects.toThrow('PARTIALLY_REFUNDED');
+    expect(tx.cartDetail.update).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+  });
 });
