@@ -358,6 +358,12 @@ export class SalesService {
           purchasePrice: detail.inventory.purchasePrice,
           salePrice: detail.inventory.salePrice,
           wholesalePrice: detail.inventory.wholesalePrice,
+          type:
+            detail.quantity === 0 &&
+            (detail.freeQuantity ?? 0) > 0 &&
+            detail.specialOfferId !== null
+              ? InventoryMovementType.PROMOTION_GIFT
+              : InventoryMovementType.SALE,
         });
       }
 

@@ -10,6 +10,7 @@ export interface SaleStockOutputValues {
   purchasePrice: Prisma.Decimal;
   salePrice: Prisma.Decimal;
   wholesalePrice: Prisma.Decimal;
+  type?: InventoryMovementType;
   createdAt?: Date;
 }
 
@@ -51,7 +52,7 @@ export async function recordSaleStockOutput(
       incomingQuantity: 0,
       outgoingQuantity: values.quantity,
       actorId: values.actorId,
-      type: InventoryMovementType.SALE,
+      type: values.type ?? InventoryMovementType.SALE,
       purchasePrice: values.purchasePrice,
       salePrice: values.salePrice,
       wholesalePrice: values.wholesalePrice,

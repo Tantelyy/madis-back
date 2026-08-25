@@ -175,4 +175,44 @@ describe('SalesService stock flow', () => {
     expect(tx.cartDetail.update).not.toHaveBeenCalled();
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
   });
+
+  it('records a free promotion product separately from a paid sale', async () => {
+    const movementCreate = jest.fn().mockResolvedValue({ id: 9 });
+    const tx = {
+      cart: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(salePayload(CartStatus.PAID)),
+      },
+      cartDetail: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            inventoryId: 12,
+            quantity: 0,
+            freeQuantity: 1,
+            specialOfferId: 5,
+            inventory,
+          },
+        ]),
+      },
+      inventory: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      inventoryMovement: { create: movementCreate },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    } as unknown as PrismaService;
+    const service = new SalesService(prisma, {} as ConfigService);
+
+    await service.pay(8, PaymentMethod.CASH, user);
+
+    expect(movementCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          outgoingQuantity: 1,
+          type: 'PROMOTION_GIFT',
+        }),
+      }),
+    );
+  });
 });
