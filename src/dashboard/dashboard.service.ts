@@ -1,8 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CartStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProfitabilityQueryDto } from './dto/profitability-query.dto';
 import { SalesStockQueryDto } from './dto/sales-stock-query.dto';
+import { ForecastItem, ForecastStatus } from './interfaces/forecast.interface';
 import type {
   ProfitabilityAmounts,
   ProfitabilityStatistics,
@@ -39,10 +46,49 @@ const DASHBOARD_SALE_STATUSES: readonly CartStatus[] = [
   CartStatus.PAID,
   CartStatus.PARTIALLY_REFUNDED,
 ];
+const ML_FORECAST_BATCH_SIZE = 100;
+const ML_BATCH_REQUEST_CONCURRENCY = 2;
+const ML_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_ML_FORECAST_CACHE_TTL_MS = 30_000;
+
+interface ForecastProduct {
+  id: number;
+  name: string;
+  reference: string;
+  productTypeId: number;
+  productType: { type: string };
+}
+
+interface MlStockoutForecast {
+  productId: number;
+  asOfDate: string;
+  forecastDays: number;
+  currentStock: number;
+  totalPredictedDemand: number;
+  alreadyOutOfStock: boolean;
+  stockoutExpected: boolean;
+  predictedStockoutDate: string | null;
+  daysUntilStockout: number | null;
+  remainingStockAfterHorizon: number;
+}
+
+interface MlStockoutForecastBatchResponse {
+  forecasts: MlStockoutForecast[];
+}
+
+interface ForecastCacheEntry {
+  forecast: MlStockoutForecast;
+  expiresAt: number;
+}
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly forecastCache = new Map<number, ForecastCacheEntry>();
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService?: ConfigService,
+  ) {}
 
   async getProfitability(
     query: ProfitabilityQueryDto,
@@ -271,6 +317,21 @@ export class DashboardService {
     };
   }
 
+  async getProductForecast(productId: number): Promise<ForecastItem> {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, deletedAt: null },
+      select: this.getForecastProductSelect(),
+    });
+
+    if (!product) {
+      throw new NotFoundException('Le produit demandé est introuvable.');
+    }
+
+    const [forecast] = await this.getMlForecasts([product]);
+
+    return this.toForecastItem(product, forecast);
+  }
+
   async getStockFinancialValue(): Promise<StockFinancialValue> {
     const inventories = await this.prisma.inventory.findMany({
       where: {
@@ -357,6 +418,254 @@ export class DashboardService {
         ? '0.00'
         : profit.toDecimalPlaces(2).toFixed(2),
     };
+  }
+
+  private async getMlForecasts(
+    products: ForecastProduct[],
+  ): Promise<MlStockoutForecast[]> {
+    const requestedProductIds = products.map((product) => product.id);
+    const now = Date.now();
+    const cachedForecasts = new Map<number, MlStockoutForecast>();
+    const missingProductIds: number[] = [];
+
+    for (const productId of requestedProductIds) {
+      const cached = this.forecastCache.get(productId);
+
+      if (cached && cached.expiresAt > now) {
+        cachedForecasts.set(productId, cached.forecast);
+      } else {
+        this.forecastCache.delete(productId);
+        missingProductIds.push(productId);
+      }
+    }
+
+    if (missingProductIds.length === 0) {
+      return requestedProductIds.map(
+        (productId) => cachedForecasts.get(productId)!,
+      );
+    }
+
+    const chunks = this.chunkItems(missingProductIds, ML_FORECAST_BATCH_SIZE);
+    const batches = await this.mapWithConcurrency(
+      chunks,
+      ML_BATCH_REQUEST_CONCURRENCY,
+      (chunk) => this.fetchMlForecastBatch(chunk),
+    );
+    const fetchedForecasts = batches.flatMap((batch) => batch.forecasts);
+    this.ensureExpectedForecasts(missingProductIds, fetchedForecasts);
+    const expiresAt = now + this.getForecastCacheTtlMs();
+
+    for (const forecast of fetchedForecasts) {
+      this.forecastCache.set(forecast.productId, { forecast, expiresAt });
+      cachedForecasts.set(forecast.productId, forecast);
+    }
+
+    return requestedProductIds.map(
+      (productId) => cachedForecasts.get(productId)!,
+    );
+  }
+
+  private ensureExpectedForecasts(
+    productIds: number[],
+    forecasts: MlStockoutForecast[],
+  ): void {
+    const responseProductIds = new Set(
+      forecasts.map((forecast) => forecast.productId),
+    );
+
+    if (
+      forecasts.length !== productIds.length ||
+      responseProductIds.size !== productIds.length ||
+      productIds.some((productId) => !responseProductIds.has(productId))
+    ) {
+      throw new BadGatewayException(
+        'Le service de prévision a retourné une liste de produits incohérente.',
+      );
+    }
+  }
+
+  private async fetchMlForecastBatch(
+    productIds: number[],
+  ): Promise<MlStockoutForecastBatchResponse> {
+    const mlServiceUrl = this.getMlServiceUrl();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ML_REQUEST_TIMEOUT_MS);
+    let response: Response;
+
+    try {
+      response = await fetch(`${mlServiceUrl}/api/v1/stockout/forecast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productIds, days: 7 }),
+        signal: controller.signal,
+      });
+    } catch {
+      throw new ServiceUnavailableException(
+        'Le service de prévision est indisponible.',
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!response.ok) {
+      throw new BadGatewayException(
+        'Le service de prévision n’a pas pu traiter la demande.',
+      );
+    }
+
+    const body: unknown = await response.json();
+
+    if (!this.isMlStockoutForecastBatchResponse(body)) {
+      throw new BadGatewayException(
+        'La réponse du service de prévision est invalide.',
+      );
+    }
+
+    return body;
+  }
+
+  private getMlServiceUrl(): string {
+    return (
+      this.configService?.get<string>('ML_SERVICE_URL') ??
+      'http://localhost:8000'
+    ).replace(/\/$/, '');
+  }
+
+  private getForecastCacheTtlMs(): number {
+    const configuredValue = Number(
+      this.configService?.get<string>('ML_FORECAST_CACHE_TTL_MS'),
+    );
+
+    return Number.isSafeInteger(configuredValue) && configuredValue >= 0
+      ? configuredValue
+      : DEFAULT_ML_FORECAST_CACHE_TTL_MS;
+  }
+
+  private chunkItems<TItem>(items: TItem[], chunkSize: number): TItem[][] {
+    const chunks: TItem[][] = [];
+
+    for (let index = 0; index < items.length; index += chunkSize) {
+      chunks.push(items.slice(index, index + chunkSize));
+    }
+
+    return chunks;
+  }
+
+  private getForecastProductSelect(): Prisma.ProductSelect {
+    return {
+      id: true,
+      name: true,
+      reference: true,
+      productTypeId: true,
+      productType: { select: { type: true } },
+    };
+  }
+
+  /*
+  private ensureExpectedForecasts(
+    productIds: number[],
+    forecasts: MlStockoutForecast[],
+  ): void {
+    const responseProductIds = new Set(
+      forecasts.map((forecast) => forecast.productId),
+    );
+
+    if (
+      forecasts.length !== productIds.length ||
+      responseProductIds.size !== productIds.length ||
+      productIds.some((productId) => !responseProductIds.has(productId))
+    ) {
+      throw new BadGatewayException(
+        'Le service de prévision a retourné une liste de produits incohérente.',
+      );
+    }
+  }
+
+  */
+  private async mapWithConcurrency<TItem, TResult>(
+    items: readonly TItem[],
+    concurrency: number,
+    mapper: (item: TItem) => Promise<TResult>,
+  ): Promise<TResult[]> {
+    const results = new Array<TResult>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(concurrency, items.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index]);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
+  }
+
+  private toForecastItem(
+    product: ForecastProduct,
+    forecast: MlStockoutForecast,
+  ): ForecastItem {
+    return {
+      productId: product.id,
+      productName: product.name,
+      productReference: product.reference,
+      productTypeId: product.productTypeId,
+      productType: product.productType.type,
+      asOfDate: forecast.asOfDate,
+      forecastDays: forecast.forecastDays,
+      currentStock: forecast.currentStock,
+      totalPredictedDemand: forecast.totalPredictedDemand,
+      remainingStockAfterHorizon: forecast.remainingStockAfterHorizon,
+      status: this.getForecastStatus(forecast),
+      predictedStockoutDate: forecast.predictedStockoutDate,
+      daysUntilStockout: forecast.daysUntilStockout,
+    };
+  }
+
+  private getForecastStatus(forecast: MlStockoutForecast): ForecastStatus {
+    if (forecast.alreadyOutOfStock) {
+      return 'OUT_OF_STOCK';
+    }
+
+    return forecast.stockoutExpected ? 'STOCKOUT_EXPECTED' : 'SUFFICIENT_STOCK';
+  }
+
+  private isMlStockoutForecastBatchResponse(
+    value: unknown,
+  ): value is MlStockoutForecastBatchResponse {
+    if (!this.isRecord(value) || !Array.isArray(value.forecasts)) {
+      return false;
+    }
+
+    return value.forecasts.every((forecast) =>
+      this.isMlStockoutForecast(forecast),
+    );
+  }
+
+  private isMlStockoutForecast(value: unknown): value is MlStockoutForecast {
+    if (!this.isRecord(value)) {
+      return false;
+    }
+
+    return (
+      typeof value.productId === 'number' &&
+      typeof value.asOfDate === 'string' &&
+      typeof value.forecastDays === 'number' &&
+      typeof value.currentStock === 'number' &&
+      typeof value.totalPredictedDemand === 'number' &&
+      typeof value.alreadyOutOfStock === 'boolean' &&
+      typeof value.stockoutExpected === 'boolean' &&
+      (typeof value.predictedStockoutDate === 'string' ||
+        value.predictedStockoutDate === null) &&
+      (typeof value.daysUntilStockout === 'number' ||
+        value.daysUntilStockout === null) &&
+      typeof value.remainingStockAfterHorizon === 'number'
+    );
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
   }
 
   private getNetPaidQuantity(detail: {
