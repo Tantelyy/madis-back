@@ -1,0 +1,152 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  IMAGE_NAME: ghcr.io/tantelyy/madis-back
+
+jobs:
+  quality:
+    name: Test, lint and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: postgresql://user:password@localhost:5432/madis
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Test
+        run: npm test -- --runInBand
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate production Compose file
+        run: docker compose --env-file deploy/.env.example --env-file deploy/.versions.env.example -f deploy/compose.yml config --quiet
+
+      - name: Test deployment script
+        run: |
+          bash -n deploy/deploy-service.sh docker-entrypoint.sh
+          python3 -m unittest discover -s deploy/tests -v
+
+      - name: Test container startup, migrations and seed on an empty database
+        run: |
+          docker build -t madis-back:ci .
+          docker network create madis-ci
+          trap 'docker rm -f madis-ci-back madis-ci-postgres >/dev/null 2>&1 || true; docker network rm madis-ci >/dev/null 2>&1 || true' EXIT
+          docker run -d --name madis-ci-postgres --network madis-ci \
+            -e POSTGRES_USER=madis -e POSTGRES_PASSWORD=ci-only-password -e POSTGRES_DB=madis postgres:17-alpine
+          ready=false
+          for attempt in $(seq 1 60); do
+            if docker exec madis-ci-postgres pg_isready -U madis -d madis; then ready=true; break; fi
+            sleep 2
+          done
+          test "$ready" = true
+          docker run -d --name madis-ci-back --network madis-ci \
+            -e DATABASE_URL=postgresql://madis:ci-only-password@madis-ci-postgres:5432/madis \
+            -e JWT_ACCESS_SECRET=ci-only-access-secret -e JWT_REFRESH_SECRET=ci-only-refresh-secret \
+            -e JWT_ACCESS_EXPIRES_IN=15m -e JWT_REFRESH_EXPIRES_IN=7d \
+            -e INITIAL_ADMIN_PASSWORD=ci-only-initial-password madis-back:ci
+          ready=false
+          for attempt in $(seq 1 90); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' madis-ci-back)" = healthy ]; then ready=true; break; fi
+            sleep 2
+          done
+          docker logs madis-ci-back
+          test "$ready" = true
+          docker exec madis-ci-back npx prisma db seed
+          docker exec madis-ci-back npx prisma migrate status
+
+  image:
+    name: Publish container image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+
+  deploy:
+    name: Deploy to Contabo
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: madis-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Synchronize deployment configuration
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" 'mkdir -p /opt/madis'
+          scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" deploy/compose.yml "$VPS_USER@$VPS_HOST:/opt/madis/compose.yml.next"
+          scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" deploy/deploy-service.sh "$VPS_USER@$VPS_HOST:/opt/madis/deploy-service.sh.next"
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "flock -w 600 /opt/madis/.deploy.lock sh -c 'mv /opt/madis/compose.yml.next /opt/madis/compose.yml && mv /opt/madis/deploy-service.sh.next /opt/madis/deploy-service.sh && chmod 750 /opt/madis/deploy-service.sh'"
+
+      - name: Deploy backend image
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "/opt/madis/deploy-service.sh backend '${IMAGE_NAME}:sha-${GITHUB_SHA}'"

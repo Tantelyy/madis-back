@@ -1,0 +1,567 @@
+import 'dotenv/config';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { hash } from 'bcryptjs';
+
+const ADMIN_EMAIL = process.env.INITIAL_ADMIN_EMAIL?.trim() || 'admin@madis.com';
+const ADMIN_USERNAME =
+  process.env.INITIAL_ADMIN_USERNAME?.trim() || 'admin';
+const PASSWORD_SALT_ROUNDS = 12;
+const PRICING_GRID_EFFECTIVE_FROM = new Date('2026-06-25T00:00:00.000Z');
+const PRICING_RULE_STEP = 3_000;
+const PRICING_RULE_LAST_MIN_PURCHASE_PRICE = 999_000;
+
+type PricingRateSegment = Readonly<{
+  minPurchasePrice: number;
+  retailMarginPercent: string;
+  wholesaleMarginPercent: string;
+}>;
+
+function getInitialAdminPassword(): string {
+  const configuredPassword = process.env.INITIAL_ADMIN_PASSWORD;
+
+  if (configuredPassword) {
+    return configuredPassword;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'INITIAL_ADMIN_PASSWORD is required to seed a production database.',
+    );
+  }
+
+  return 'Password123!';
+}
+
+const PRICING_RATE_SEGMENTS: readonly PricingRateSegment[] = [
+  {
+    minPurchasePrice: 0,
+    retailMarginPercent: '28.5',
+    wholesaleMarginPercent: '18',
+  },
+  {
+    minPurchasePrice: 3_000,
+    retailMarginPercent: '22.5',
+    wholesaleMarginPercent: '13',
+  },
+  {
+    minPurchasePrice: 6_000,
+    retailMarginPercent: '24',
+    wholesaleMarginPercent: '14.5',
+  },
+  {
+    minPurchasePrice: 9_000,
+    retailMarginPercent: '23',
+    wholesaleMarginPercent: '12',
+  },
+  {
+    minPurchasePrice: 12_000,
+    retailMarginPercent: '22',
+    wholesaleMarginPercent: '10',
+  },
+  {
+    minPurchasePrice: 15_000,
+    retailMarginPercent: '21',
+    wholesaleMarginPercent: '9',
+  },
+  {
+    minPurchasePrice: 18_000,
+    retailMarginPercent: '19',
+    wholesaleMarginPercent: '9',
+  },
+  {
+    minPurchasePrice: 21_000,
+    retailMarginPercent: '17',
+    wholesaleMarginPercent: '8.5',
+  },
+  {
+    minPurchasePrice: 24_000,
+    retailMarginPercent: '15',
+    wholesaleMarginPercent: '8.3',
+  },
+  {
+    minPurchasePrice: 27_000,
+    retailMarginPercent: '13.5',
+    wholesaleMarginPercent: '8.2',
+  },
+  {
+    minPurchasePrice: 30_000,
+    retailMarginPercent: '12.5',
+    wholesaleMarginPercent: '7.6',
+  },
+  {
+    minPurchasePrice: 33_000,
+    retailMarginPercent: '12.5',
+    wholesaleMarginPercent: '7',
+  },
+  {
+    minPurchasePrice: 36_000,
+    retailMarginPercent: '12.5',
+    wholesaleMarginPercent: '6.9',
+  },
+  {
+    minPurchasePrice: 39_000,
+    retailMarginPercent: '11',
+    wholesaleMarginPercent: '6.9',
+  },
+  {
+    minPurchasePrice: 42_000,
+    retailMarginPercent: '10.5',
+    wholesaleMarginPercent: '6.9',
+  },
+  {
+    minPurchasePrice: 45_000,
+    retailMarginPercent: '10',
+    wholesaleMarginPercent: '6.8',
+  },
+  {
+    minPurchasePrice: 48_000,
+    retailMarginPercent: '9.5',
+    wholesaleMarginPercent: '6.6',
+  },
+  {
+    minPurchasePrice: 51_000,
+    retailMarginPercent: '9',
+    wholesaleMarginPercent: '6.4',
+  },
+  {
+    minPurchasePrice: 54_000,
+    retailMarginPercent: '8.6',
+    wholesaleMarginPercent: '6.2',
+  },
+  {
+    minPurchasePrice: 57_000,
+    retailMarginPercent: '8.5',
+    wholesaleMarginPercent: '6',
+  },
+  {
+    minPurchasePrice: 60_000,
+    retailMarginPercent: '8.4',
+    wholesaleMarginPercent: '5.8',
+  },
+  {
+    minPurchasePrice: 63_000,
+    retailMarginPercent: '8.2',
+    wholesaleMarginPercent: '5.7',
+  },
+  {
+    minPurchasePrice: 66_000,
+    retailMarginPercent: '8',
+    wholesaleMarginPercent: '5.7',
+  },
+  {
+    minPurchasePrice: 69_000,
+    retailMarginPercent: '8.5',
+    wholesaleMarginPercent: '6',
+  },
+  {
+    minPurchasePrice: 78_000,
+    retailMarginPercent: '8.4',
+    wholesaleMarginPercent: '6',
+  },
+  {
+    minPurchasePrice: 81_000,
+    retailMarginPercent: '7.9',
+    wholesaleMarginPercent: '6.5',
+  },
+  {
+    minPurchasePrice: 90_000,
+    retailMarginPercent: '7.9',
+    wholesaleMarginPercent: '6.6',
+  },
+  {
+    minPurchasePrice: 99_000,
+    retailMarginPercent: '7.9',
+    wholesaleMarginPercent: '6.8',
+  },
+];
+
+function findPricingRateSegment(minPurchasePrice: number): PricingRateSegment {
+  for (let index = PRICING_RATE_SEGMENTS.length - 1; index >= 0; index -= 1) {
+    const segment = PRICING_RATE_SEGMENTS[index];
+
+    if (minPurchasePrice >= segment.minPurchasePrice) {
+      return segment;
+    }
+  }
+
+  return PRICING_RATE_SEGMENTS[0];
+}
+
+function toTwoDecimalString(value: number): string {
+  return value.toFixed(2);
+}
+
+function calculateAverageMargin(
+  minPurchasePrice: number,
+  maxPurchasePrice: number,
+  marginPercent: string,
+): string {
+  const basePrice =
+    minPurchasePrice === 0
+      ? maxPurchasePrice
+      : (minPurchasePrice + maxPurchasePrice) / 2;
+  const marginAmount = (basePrice * Number(marginPercent)) / 100;
+
+  return toTwoDecimalString(marginAmount);
+}
+
+function buildPricingRuleInputs(
+  pricingGridId: number,
+): Prisma.PricingRuleCreateManyInput[] {
+  const pricingRules: Prisma.PricingRuleCreateManyInput[] = [];
+
+  for (
+    let minPurchasePrice = 0;
+    minPurchasePrice <= PRICING_RULE_LAST_MIN_PURCHASE_PRICE;
+    minPurchasePrice += PRICING_RULE_STEP
+  ) {
+    const maxPurchasePrice = minPurchasePrice + PRICING_RULE_STEP - 1;
+    const pricingRate = findPricingRateSegment(minPurchasePrice);
+
+    pricingRules.push({
+      pricingGridId,
+      minPurchasePrice,
+      maxPurchasePrice,
+      retailMarginPercent: pricingRate.retailMarginPercent,
+      wholesaleMarginPercent: pricingRate.wholesaleMarginPercent,
+      retailAverage: calculateAverageMargin(
+        minPurchasePrice,
+        maxPurchasePrice,
+        pricingRate.retailMarginPercent,
+      ),
+      wholesaleAverage: calculateAverageMargin(
+        minPurchasePrice,
+        maxPurchasePrice,
+        pricingRate.wholesaleMarginPercent,
+      ),
+    });
+  }
+
+  return pricingRules;
+}
+
+async function seed(): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is required to run the seed.');
+  }
+
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(databaseUrl),
+  });
+
+  try {
+    const sellerRole = await prisma.role.upsert({
+      where: { label: 'SELLER' },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'SELLER',
+      },
+    });
+
+    const adminRole = await prisma.role.upsert({
+      where: { label: 'ADMIN' },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'ADMIN',
+      },
+    });
+
+    const stockManagerRole = await prisma.role.upsert({
+      where: { label: 'STOCK_MANAGER' },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'STOCK_MANAGER',
+      },
+    });
+
+    const canSellPermission = await prisma.permission.upsert({
+      where: { code: 'CAN_SELL' },
+      update: {
+        label: 'Vendre',
+        descriptions: 'Permet d’accéder aux fonctionnalités de vente.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Vendre',
+        code: 'CAN_SELL',
+        descriptions: 'Permet d’accéder aux fonctionnalités de vente.',
+      },
+    });
+
+    const allPermission = await prisma.permission.upsert({
+      where: { code: 'ALL' },
+      update: {
+        label: 'Toutes les permissions',
+        descriptions:
+          'Donne accès à toutes les fonctionnalités de l’application.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Toutes les permissions',
+        code: 'ALL',
+        descriptions:
+          'Donne accès à toutes les fonctionnalités de l’application.',
+      },
+    });
+
+    await prisma.permission.upsert({
+      where: { code: 'CAN_SUPPLIERS' },
+      update: {
+        label: 'Gérer les fournisseurs',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les fournisseurs.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Gérer les fournisseurs',
+        code: 'CAN_SUPPLIERS',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les fournisseurs.',
+      },
+    });
+
+    await prisma.permission.upsert({
+      where: { code: 'CAN_PRODUCTS' },
+      update: {
+        label: 'Gérer les produits',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les produits et leurs référentiels.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Gérer les produits',
+        code: 'CAN_PRODUCTS',
+        descriptions:
+          'Permet de consulter, ajouter, modifier et désactiver les produits et leurs référentiels.',
+      },
+    });
+
+    await prisma.permission.upsert({
+      where: { code: 'CAN_MARGE' },
+      update: {
+        label: 'Gérer la marge réglementaire',
+        descriptions:
+          'Permet de consulter et paramétrer les grilles de marge réglementaire.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Gérer la marge réglementaire',
+        code: 'CAN_MARGE',
+        descriptions:
+          'Permet de consulter et paramétrer les grilles de marge réglementaire.',
+      },
+    });
+
+    const canInventoryPermission = await prisma.permission.upsert({
+      where: { code: 'CAN_INVENTORY' },
+      update: {
+        label: 'Gérer le stock',
+        descriptions:
+          'Permet de consulter les stocks, enregistrer les entrées et suivre les mouvements.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Gérer le stock',
+        code: 'CAN_INVENTORY',
+        descriptions:
+          'Permet de consulter les stocks, enregistrer les entrées et suivre les mouvements.',
+      },
+    });
+
+    await prisma.permission.upsert({
+      where: { code: 'CAN_MANAGE_ACCOUNTS' },
+      update: {
+        label: 'Gérer les comptes',
+        descriptions:
+          'Permet de créer, modifier et désactiver les comptes utilisateurs ainsi que leurs permissions.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Gérer les comptes',
+        code: 'CAN_MANAGE_ACCOUNTS',
+        descriptions:
+          'Permet de créer, modifier et désactiver les comptes utilisateurs ainsi que leurs permissions.',
+      },
+    });
+
+    const canViewStockPermission = await prisma.permission.upsert({
+      where: { code: 'CAN_VIEW_STOCK' },
+      update: {
+        label: 'Consulter l’état du stock',
+        descriptions:
+          'Permet de consulter et d’exporter l’état du stock par produit et par lot.',
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        label: 'Consulter l’état du stock',
+        code: 'CAN_VIEW_STOCK',
+        descriptions:
+          'Permet de consulter et d’exporter l’état du stock par produit et par lot.',
+      },
+    });
+
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: sellerRole.id,
+          permissionId: canSellPermission.id,
+        },
+      },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        roleId: sellerRole.id,
+        permissionId: canSellPermission.id,
+      },
+    });
+
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: adminRole.id,
+          permissionId: allPermission.id,
+        },
+      },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        roleId: adminRole.id,
+        permissionId: allPermission.id,
+      },
+    });
+
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: stockManagerRole.id,
+          permissionId: canViewStockPermission.id,
+        },
+      },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        roleId: stockManagerRole.id,
+        permissionId: canViewStockPermission.id,
+      },
+    });
+
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: stockManagerRole.id,
+          permissionId: canInventoryPermission.id,
+        },
+      },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        roleId: stockManagerRole.id,
+        permissionId: canInventoryPermission.id,
+      },
+    });
+
+    const hashedPassword = await hash(
+      getInitialAdminPassword(),
+      PASSWORD_SALT_ROUNDS,
+    );
+    const adminUser = await prisma.user.upsert({
+      where: { email: ADMIN_EMAIL },
+      update: {
+        userName: ADMIN_USERNAME,
+        roleId: adminRole.id,
+        deletedAt: null,
+      },
+      create: {
+        email: ADMIN_EMAIL,
+        password: hashedPassword,
+        userName: ADMIN_USERNAME,
+        roleId: adminRole.id,
+      },
+    });
+
+    const currentInventoryLimit = await prisma.limitInventory.findFirst({
+      select: { id: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    if (!currentInventoryLimit) {
+      await prisma.limitInventory.create({
+        data: {
+          createdBy: adminUser.id,
+          value: 15,
+        },
+      });
+    }
+
+    await prisma.userPermission.upsert({
+      where: {
+        userId_permissionId: {
+          userId: adminUser.id,
+          permissionId: allPermission.id,
+        },
+      },
+      update: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+      create: {
+        userId: adminUser.id,
+        permissionId: allPermission.id,
+      },
+    });
+
+    const pricingGrid = await prisma.pricingGrid.upsert({
+      where: {
+        effectiveFrom: PRICING_GRID_EFFECTIVE_FROM,
+      },
+      update: {
+        status: 'ACTIVE',
+        effectiveTo: null,
+        createdBy: adminUser.id,
+      },
+      create: {
+        status: 'ACTIVE',
+        effectiveFrom: PRICING_GRID_EFFECTIVE_FROM,
+        effectiveTo: null,
+        createdBy: adminUser.id,
+      },
+    });
+
+    await prisma.pricingRule.createMany({
+      data: buildPricingRuleInputs(pricingGrid.id),
+      skipDuplicates: true,
+    });
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+void seed();

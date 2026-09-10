@@ -1,0 +1,4 @@
+ALTER TABLE "Carts"
+ALTER COLUMN "customerName" DROP NOT NULL,
+ALTER COLUMN "customerContact" DROP NOT NULL,
+ALTER COLUMN "customerAddress" DROP NOT NULL;

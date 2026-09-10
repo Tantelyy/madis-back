@@ -41,6 +41,11 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+/deploy/.versions.env
+/deploy/.deploy.lock
+/deploy/*.dump
+/deploy/backups/
+/deploy/tests/__pycache__/
 
 # temp directory
 .temp

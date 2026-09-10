@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "PricingRules_pricingGridId_minPurchasePrice_maxPurchasePrice_ke" RENAME TO "PricingRules_pricingGridId_minPurchasePrice_maxPurchasePric_key";
