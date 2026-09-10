@@ -3,9 +3,9 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
-const ADMIN_EMAIL = 'admin@madis.com';
-const ADMIN_PASSWORD = 'Password123!';
-const ADMIN_USERNAME = 'admin';
+const ADMIN_EMAIL = process.env.INITIAL_ADMIN_EMAIL?.trim() || 'admin@madis.com';
+const ADMIN_USERNAME =
+  process.env.INITIAL_ADMIN_USERNAME?.trim() || 'admin';
 const PASSWORD_SALT_ROUNDS = 12;
 const PRICING_GRID_EFFECTIVE_FROM = new Date('2026-06-25T00:00:00.000Z');
 const PRICING_RULE_STEP = 3_000;
@@ -16,6 +16,22 @@ type PricingRateSegment = Readonly<{
   retailMarginPercent: string;
   wholesaleMarginPercent: string;
 }>;
+
+function getInitialAdminPassword(): string {
+  const configuredPassword = process.env.INITIAL_ADMIN_PASSWORD;
+
+  if (configuredPassword) {
+    return configuredPassword;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'INITIAL_ADMIN_PASSWORD is required to seed a production database.',
+    );
+  }
+
+  return 'Password123!';
+}
 
 const PRICING_RATE_SEGMENTS: readonly PricingRateSegment[] = [
   {
@@ -472,11 +488,13 @@ async function seed(): Promise<void> {
       },
     });
 
-    const hashedPassword = await hash(ADMIN_PASSWORD, PASSWORD_SALT_ROUNDS);
+    const hashedPassword = await hash(
+      getInitialAdminPassword(),
+      PASSWORD_SALT_ROUNDS,
+    );
     const adminUser = await prisma.user.upsert({
       where: { email: ADMIN_EMAIL },
       update: {
-        password: hashedPassword,
         userName: ADMIN_USERNAME,
         roleId: adminRole.id,
         deletedAt: null,

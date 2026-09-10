@@ -84,6 +84,8 @@ describe('recordSaleStockOutput', () => {
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
+        // Jest's asymmetric matcher is intentionally dynamic in this assertion.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: expect.objectContaining({
           type: InventoryMovementType.PROMOTION_GIFT,
         }),

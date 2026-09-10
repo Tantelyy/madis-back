@@ -1,0 +1,117 @@
+name: madis
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ml-service:
+    image: ${ML_IMAGE:-ghcr.io/tantelyy/madis-fastapi:latest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DEMAND_DATA_MODE: production
+      DEMAND_MODEL_PATH: /app/artifacts/models/demand_model_deployment.joblib
+      DEMAND_MODEL_METADATA_PATH: /app/artifacts/models/demand_model_deployment_metadata.json
+      CORS_ORIGINS: ""
+      LOG_LEVEL: INFO
+    expose:
+      - "8000"
+    networks:
+      - private
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/tantelyy/madis-back:latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      FRONTEND_URL: https://${NGROK_DOMAIN:?NGROK_DOMAIN is required}
+      ML_SERVICE_URL: http://ml-service:8000
+      ML_FORECAST_CACHE_TTL_MS: ${ML_FORECAST_CACHE_TTL_MS:-30000}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@madis.com}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD is required}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      MADIS_ADDRESS: ${MADIS_ADDRESS:-AVARATRANTANIMORA}
+      MADIS_NIF: ${MADIS_NIF:-4019 20 33 95}
+      MADIS_STAT: ${MADIS_STAT:-46900 11 2025 0 03 535}
+      MADIS_SLOGAN: ${MADIS_SLOGAN:-SMART CHOICE, BETTER LIFE}
+      MADIS_LOGO_PATH: assets/logo.png
+    expose:
+      - "3000"
+    networks:
+      - api
+      - private
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    logging: *default-logging
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/tantelyy/madis-front:latest}
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - edge
+      - api
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging: *default-logging
+
+  tunnel:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    command:
+      - http
+      - http://frontend:8080
+      - --url
+      - https://${NGROK_DOMAIN:?NGROK_DOMAIN is required}
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?NGROK_AUTHTOKEN is required}
+    networks:
+      - edge
+    depends_on:
+      frontend:
+        condition: service_healthy
+    logging: *default-logging
+
+volumes:
+  postgres-data:
+
+networks:
+  edge:
+  api:
+    internal: true
+  private:
+    internal: true
