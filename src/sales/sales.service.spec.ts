@@ -51,7 +51,10 @@ function salePayload(status: CartStatus) {
         refundBy: null,
         refundedQuantity: 0,
         reason: null,
-        inventory: { ...inventory, product: { id: 4, name: 'Produit', reference: 'REF-4', image: null } },
+        inventory: {
+          ...inventory,
+          product: { id: 4, name: 'Produit', reference: 'REF-4', image: null },
+        },
         refundUser: null,
       },
     ],
@@ -70,25 +73,42 @@ describe('SalesService stock flow', () => {
   it('creates a validated sale without decrementing stock', async () => {
     const cartCreate = jest.fn().mockResolvedValue({ id: 8 });
     const tx = {
-      product: { findMany: jest.fn().mockResolvedValue([{ id: 4, name: 'Produit' }]) },
+      product: {
+        findMany: jest.fn().mockResolvedValue([{ id: 4, name: 'Produit' }]),
+      },
       inventory: {
-        findMany: jest.fn().mockResolvedValue([{ ...inventory, inventorySpecialOffers: [] }]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ ...inventory, inventorySpecialOffers: [] }]),
         updateMany: jest.fn(),
       },
-      cart: { create: cartCreate, findUnique: jest.fn().mockResolvedValue(salePayload(CartStatus.VALIDATED)) },
+      cart: {
+        create: cartCreate,
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(salePayload(CartStatus.VALIDATED)),
+      },
       inventoryMovement: { create: jest.fn() },
     };
     const prisma = {
-      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) =>
+        callback(tx),
+      ),
     } as unknown as PrismaService;
     const service = new SalesService(prisma, {} as ConfigService);
 
-    await service.create({ items: [{ productId: 4, quantity: 2, wholesale: false }] }, user);
+    await service.create(
+      { items: [{ productId: 4, quantity: 2, wholesale: false }] },
+      user,
+    );
 
     expect(cartCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        // Jest's asymmetric matchers are intentionally dynamic in test assertions.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: expect.objectContaining({
           status: CartStatus.VALIDATED,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           validatedAt: expect.any(Date),
         }),
       }),
@@ -106,15 +126,19 @@ describe('SalesService stock flow', () => {
         findUnique: jest.fn().mockResolvedValue(salePayload(CartStatus.PAID)),
       },
       cartDetail: {
-        findMany: jest.fn().mockResolvedValue([
-          { inventoryId: 12, quantity: 2, freeQuantity: null, inventory },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { inventoryId: 12, quantity: 2, freeQuantity: null, inventory },
+          ]),
       },
       inventory: { updateMany: stockUpdate, findUnique: jest.fn() },
       inventoryMovement: { create: movementCreate },
     };
     const prisma = {
-      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) =>
+        callback(tx),
+      ),
     } as unknown as PrismaService;
     const service = new SalesService(prisma, {} as ConfigService);
 
@@ -125,6 +149,7 @@ describe('SalesService stock flow', () => {
       data: {
         status: CartStatus.PAID,
         paymentMethod: PaymentMethod.CASH,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         paidAt: expect.any(Date),
       },
     });
@@ -134,6 +159,7 @@ describe('SalesService stock flow', () => {
     });
     expect(movementCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: expect.objectContaining({
           inventoryId: 12,
           outgoingQuantity: 2,
@@ -165,9 +191,7 @@ describe('SalesService stock flow', () => {
       service.refund(
         8,
         {
-          items: [
-            { cartDetailId: 20, quantity: 1, reason: 'Retour client' },
-          ],
+          items: [{ cartDetailId: 20, quantity: 1, reason: 'Retour client' }],
         },
         user,
       ),
@@ -208,6 +232,7 @@ describe('SalesService stock flow', () => {
 
     expect(movementCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: expect.objectContaining({
           outgoingQuantity: 1,
           type: 'PROMOTION_GIFT',
