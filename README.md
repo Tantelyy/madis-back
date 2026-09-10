@@ -1,98 +1,98 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# MADIS — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API métier de **MADIS (Ma Distribution)**, une application de gestion commerciale
+et de suivi des stocks. Ce service centralise les règles de gestion, les accès
+aux données et les échanges avec le service de prévision.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Fonctionnalités
 
-## Description
+- Authentification par JWT dans des cookies HTTP-only, rôles et permissions.
+- Gestion des utilisateurs, fournisseurs, produits et référentiels.
+- Gestion des lots, inventaires, mouvements et seuils de stock.
+- Grilles tarifaires, promotions et produits offerts.
+- Vente, validation, paiement, annulation et remboursement.
+- Génération de factures PDF et import de données CSV.
+- Tableaux de bord commerciaux et consultation des prévisions de demande et de rupture.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Technologies et organisation
 
-## Project setup
+Le projet utilise **NestJS, TypeScript, Prisma et PostgreSQL**. Les tests reposent
+sur Jest ; ESLint et Prettier assurent les contrôles de code.
 
-```bash
-$ npm install
-```
+- `src/` : modules métier, contrôleurs, services, DTO et tests unitaires.
+- `prisma/` : schéma de données, migrations et seed.
+- `assets/` : ressources utilisées notamment pour les factures.
+- `deploy/` : configuration partagée pour le déploiement de toute la stack.
+- `.github/workflows/ci.yml` : pipeline CI/CD.
 
-## Compile and run the project
+Le [frontend React](https://github.com/Tantelyy/madis-front) appelle cette API.
+Le backend lit et écrit dans PostgreSQL et interroge le
+[service ML](https://github.com/Tantelyy/madis-fastAPI) pour les prévisions.
 
-```bash
-# development
-$ npm run start
+## Développement local
 
-# watch mode
-$ npm run start:dev
+Prérequis : Node.js 22.12 ou supérieur dans la branche 22, npm et une base
+PostgreSQL de développement accessible. Exécuter les commandes depuis la racine
+de ce dépôt. Sous PowerShell, utiliser `npm.cmd` ou `npx.cmd` si l'exécution des
+scripts `.ps1` est bloquée.
 
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
+Installer les dépendances et préparer le fichier de configuration :
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm ci
+cp .env.example .env
 ```
 
-## Deployment
+Sous PowerShell, la copie peut se faire avec `Copy-Item .env.example .env`.
+Si un `.env` existe déjà, conserver ses valeurs.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Configurer `DATABASE_URL`, les secrets JWT, `FRONTEND_URL` et
+`ML_SERVICE_URL` à partir de [.env.example](.env.example). Pour le premier
+administrateur, ajouter `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME` et
+`INITIAL_ADMIN_PASSWORD` dans le fichier avant le seed.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Sur une base de développement neuve :
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run prisma:generate
+npx prisma migrate deploy
+npm run prisma:seed
+npm run start:dev
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+L'API écoute par défaut sur `http://localhost:3000`. Le frontend local utilise
+`http://localhost:5173` et le service ML `http://localhost:8000`.
+Le seed initialise les rôles, permissions, paramètres et le premier compte
+administrateur ; il ne doit pas être relancé systématiquement sur une base utilisée.
 
-## Resources
+## Vérifications
 
-Check out a few resources that may come in handy when working with NestJS:
+Après génération du client Prisma :
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+npm test -- --runInBand
+npm run lint
+npm run build
+```
 
-## Support
+Pour créer une nouvelle migration pendant le développement, utiliser
+`npm run prisma:migrate -- --name nom_de_la_modification` sur la base locale.
+Les migrations versionnées sont ensuite appliquées en production avec
+`prisma migrate deploy`.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## CI/CD et déploiement
 
-## Stay in touch
+La CI vérifie tests, lint et build sur les pull requests et les branches
+`dev` et `main`. Elle contrôle aussi le script de déploiement et le démarrage
+de l'image backend avec migrations et seed sur une base de test vide.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Un push sur `main` publie l'image `ghcr.io/tantelyy/madis-back`. Le CD met
+à jour le backend sur Contabo lorsque `DEPLOY_ENABLED=true`.
 
-## License
+Sur le VPS, Nginx transmet les requêtes `/api/*` à Nest ; le port du backend
+n'est pas publié sur l'hôte. L'entrypoint applique les migrations avant de
+démarrer l'application.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Consulter le **[guide de déploiement Contabo](deploy/README.md)** pour les trois
+applications, PostgreSQL, ngrok, SSH et les secrets. Les fichiers `.env` et les
+clés privées ne doivent pas être commités.
