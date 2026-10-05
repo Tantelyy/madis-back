@@ -49,7 +49,6 @@ const DASHBOARD_SALE_STATUSES: readonly CartStatus[] = [
 const ML_FORECAST_BATCH_SIZE = 100;
 const ML_BATCH_REQUEST_CONCURRENCY = 2;
 const ML_REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_ML_FORECAST_CACHE_TTL_MS = 30_000;
 
 interface ForecastProduct {
   id: number;
@@ -76,15 +75,8 @@ interface MlStockoutForecastBatchResponse {
   forecasts: MlStockoutForecast[];
 }
 
-interface ForecastCacheEntry {
-  forecast: MlStockoutForecast;
-  expiresAt: number;
-}
-
 @Injectable()
 export class DashboardService {
-  private readonly forecastCache = new Map<number, ForecastCacheEntry>();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService?: ConfigService,
@@ -217,6 +209,7 @@ export class DashboardService {
     query: SalesStockQueryDto,
   ): Promise<SalesStockAnalysis> {
     const { from, to } = parseDashboardPeriod(query);
+    const stockAsOf = new Date();
     const productWhere: Prisma.ProductWhereInput = {
       deletedAt: null,
       productTypeId: query.productTypeId,
@@ -230,7 +223,7 @@ export class DashboardService {
           productTypeId: true,
           productType: { select: { type: true } },
           inventories: {
-            select: { id: true, remainingQuantity: true },
+            select: { id: true, remainingQuantity: true, expiredAt: true },
           },
         },
       }),
@@ -278,7 +271,11 @@ export class DashboardService {
       productType: product.productType.type,
       soldQuantity: soldQuantityByProductId.get(product.id) ?? 0,
       currentStock: product.inventories.reduce(
-        (total, inventory) => total + inventory.remainingQuantity,
+        (total, inventory) =>
+          total +
+          (!inventory.expiredAt || inventory.expiredAt >= stockAsOf
+            ? inventory.remainingQuantity
+            : 0),
         0,
       ),
     }));
@@ -305,7 +302,7 @@ export class DashboardService {
         from: from.toISOString(),
         to: to.toISOString(),
       },
-      stockAsOf: new Date().toISOString(),
+      stockAsOf: stockAsOf.toISOString(),
       maximumQuantity,
       data: items.slice(skip, skip + query.limit),
       meta: {
@@ -424,44 +421,19 @@ export class DashboardService {
     products: ForecastProduct[],
   ): Promise<MlStockoutForecast[]> {
     const requestedProductIds = products.map((product) => product.id);
-    const now = Date.now();
-    const cachedForecasts = new Map<number, MlStockoutForecast>();
-    const missingProductIds: number[] = [];
-
-    for (const productId of requestedProductIds) {
-      const cached = this.forecastCache.get(productId);
-
-      if (cached && cached.expiresAt > now) {
-        cachedForecasts.set(productId, cached.forecast);
-      } else {
-        this.forecastCache.delete(productId);
-        missingProductIds.push(productId);
-      }
-    }
-
-    if (missingProductIds.length === 0) {
-      return requestedProductIds.map(
-        (productId) => cachedForecasts.get(productId)!,
-      );
-    }
-
-    const chunks = this.chunkItems(missingProductIds, ML_FORECAST_BATCH_SIZE);
+    const chunks = this.chunkItems(requestedProductIds, ML_FORECAST_BATCH_SIZE);
     const batches = await this.mapWithConcurrency(
       chunks,
       ML_BATCH_REQUEST_CONCURRENCY,
       (chunk) => this.fetchMlForecastBatch(chunk),
     );
     const fetchedForecasts = batches.flatMap((batch) => batch.forecasts);
-    this.ensureExpectedForecasts(missingProductIds, fetchedForecasts);
-    const expiresAt = now + this.getForecastCacheTtlMs();
-
-    for (const forecast of fetchedForecasts) {
-      this.forecastCache.set(forecast.productId, { forecast, expiresAt });
-      cachedForecasts.set(forecast.productId, forecast);
-    }
-
+    this.ensureExpectedForecasts(requestedProductIds, fetchedForecasts);
+    const forecastsByProductId = new Map(
+      fetchedForecasts.map((forecast) => [forecast.productId, forecast]),
+    );
     return requestedProductIds.map(
-      (productId) => cachedForecasts.get(productId)!,
+      (productId) => forecastsByProductId.get(productId)!,
     );
   }
 
@@ -531,16 +503,6 @@ export class DashboardService {
     ).replace(/\/$/, '');
   }
 
-  private getForecastCacheTtlMs(): number {
-    const configuredValue = Number(
-      this.configService?.get<string>('ML_FORECAST_CACHE_TTL_MS'),
-    );
-
-    return Number.isSafeInteger(configuredValue) && configuredValue >= 0
-      ? configuredValue
-      : DEFAULT_ML_FORECAST_CACHE_TTL_MS;
-  }
-
   private chunkItems<TItem>(items: TItem[], chunkSize: number): TItem[][] {
     const chunks: TItem[][] = [];
 
@@ -561,27 +523,6 @@ export class DashboardService {
     };
   }
 
-  /*
-  private ensureExpectedForecasts(
-    productIds: number[],
-    forecasts: MlStockoutForecast[],
-  ): void {
-    const responseProductIds = new Set(
-      forecasts.map((forecast) => forecast.productId),
-    );
-
-    if (
-      forecasts.length !== productIds.length ||
-      responseProductIds.size !== productIds.length ||
-      productIds.some((productId) => !responseProductIds.has(productId))
-    ) {
-      throw new BadGatewayException(
-        'Le service de prévision a retourné une liste de produits incohérente.',
-      );
-    }
-  }
-
-  */
   private async mapWithConcurrency<TItem, TResult>(
     items: readonly TItem[],
     concurrency: number,
